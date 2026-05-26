@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import SecurePlayer from "@/components/SecurePlayer";
 import WatermarkOverlay from "@/components/WatermarkOverlay";
+import WatermarkSentinel from "@/components/WatermarkSentinel";
 import DevToolsGuard from "@/components/DevToolsGuard";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
@@ -26,6 +27,7 @@ export default function LessonPage({
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [paused, setPaused] = useState(false);
+  const [tamperReason, setTamperReason] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,11 +54,32 @@ export default function LessonPage({
   return (
     <main className="min-h-screen">
       <DevToolsGuard onDetect={() => setPaused(true)} />
+      <WatermarkSentinel
+        overlaySelector="[data-watermark='overlay']"
+        onTamper={(reason) => {
+          setPaused(true);
+          setTamperReason(reason);
+        }}
+      />
       <div className="max-w-5xl mx-auto p-6">
         <h1 className="text-xl font-semibold mb-4">{lesson.title}</h1>
         <div className="relative aspect-video bg-black rounded-xl overflow-hidden select-none">
           {!paused && <SecurePlayer videoId={lesson.video_id} lessonId={lesson.id} />}
           <WatermarkOverlay userEmail={me.email} userId={me.id} />
+          {paused && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 text-center p-6">
+              <div>
+                <p className="text-lg font-semibold mb-2">หยุดการเล่นชั่วคราว</p>
+                <p className="text-sm opacity-70">
+                  ตรวจพบการแก้ไขหน้าเว็บหรือเปิดเครื่องมือนักพัฒนา
+                  {tamperReason ? ` (${tamperReason})` : ""}
+                </p>
+                <p className="text-xs opacity-50 mt-2">
+                  รีเฟรชหน้าเพื่อเล่นต่อ
+                </p>
+              </div>
+            </div>
+          )}
         </div>
         <p className="mt-3 text-xs opacity-50">
           เข้าสู่ระบบด้วย {me.email} ระบบบันทึกการรับชมไว้สำหรับเซสชันนี้

@@ -83,7 +83,8 @@ export default function WatermarkOverlay({ userEmail, userId, clientIp }: Props)
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none absolute inset-0 z-10"
+      data-watermark="overlay"
+      className="wm-overlay pointer-events-none absolute inset-0 z-10"
       aria-hidden
     />
   );

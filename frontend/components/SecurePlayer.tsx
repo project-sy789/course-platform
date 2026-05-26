@@ -61,14 +61,21 @@ export default function SecurePlayer({ videoId, lessonId }: Props) {
 
         hls = new Hls({
           loader: KeyRewritingLoader,
+          // The manifest, sub-manifests, and key URIs are all served from
+          // our API now (private R2 + proxy rewrite). Send the session
+          // cookie on every same-origin call so require_enrollment passes.
           xhrSetup: (xhr, url) => {
-            if (url.startsWith(API)) xhr.withCredentials = true;
+            if (url.startsWith(API) || url.startsWith("/")) {
+              xhr.withCredentials = true;
+            }
           },
         });
-        hls.loadSource(sess.manifest_url);
+        hls.loadSource(`${API}${sess.manifest_url}`);
         hls.attachMedia(video);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = sess.manifest_url;
+        // Safari native HLS path. Cookie ride-along works because the URL
+        // is same-origin from the browser's perspective.
+        video.src = `${API}${sess.manifest_url}`;
       }
 
       if (resumeAt > 0) {

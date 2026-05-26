@@ -50,3 +50,18 @@ def get_bytes(key: str) -> bytes:
 def delete_object(key: str) -> None:
     client = get_r2_client()
     client.delete_object(Bucket=settings.R2_BUCKET, Key=key)
+
+
+def presigned_get_url(key: str, expires_in: int = 10) -> str:
+    """Short-lived presigned GET URL for a private R2 object.
+
+    Used by the playback proxy to hand out per-segment URLs that expire in
+    seconds. The bucket itself can — and should — be set to private:
+    `R2_PUBLIC_BASE` becomes redundant for video delivery; only used by
+    legacy public material URLs that haven't been migrated yet."""
+    client = get_r2_client()
+    return client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.R2_BUCKET, "Key": key},
+        ExpiresIn=expires_in,
+    )

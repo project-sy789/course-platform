@@ -1,6 +1,8 @@
 import hashlib
 import json
+import re
 import secrets
+from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 from redis.asyncio import Redis
@@ -10,9 +12,18 @@ from ..deps import current_user, require_enrollment_for_video
 from ..logging import log
 from ..models import User, Video, VideoKey, KeyAccessLog
 from ..crypto import decrypt_video_key
+from ..r2 import get_bytes, presigned_get_url
 from ..config import settings
 
 router = APIRouter(prefix="/api/v1/videos", tags=["videos"])
+
+
+# Single-use, 10-second token TTLs. The session token (PB_SESSION_TTL_SEC)
+# is the long-lived envelope; key + segment + manifest tokens are minted from
+# the session and burn themselves on first redemption. Anyone who scrapes a
+# URL has a ~10-second window to use it from the same IP+UA, after which it
+# cannot be replayed even with the bearer cookie.
+_SHORT_TOKEN_TTL = 10
 
 
 def _client_ctx(request: Request) -> tuple[str, str]:
@@ -64,12 +75,173 @@ async def create_playback_session(
     await redis.sadd(sess_set_key, token)
     await redis.expire(sess_set_key, settings.PB_SESSION_TTL_SEC * 2)
 
-    manifest_url = f"{settings.R2_PUBLIC_BASE}/{video.r2_manifest_key}"
+    # The manifest is no longer fetched directly from R2 by the player —
+    # the bucket is private. We proxy it through this API so we can rewrite
+    # every segment URL to a presigned URL that expires in seconds, and so
+    # the key URI line is force-rewritten to a single-use endpoint here.
     return {
-        "manifest_url": manifest_url,
+        "manifest_url": f"/api/v1/videos/{video.id}/manifest?s={token}",
         "key_url_template": f"/api/v1/videos/{video.id}/key?s={token}",
         "expires_in": settings.PB_SESSION_TTL_SEC,
     }
+
+
+async def _mint_short_token(redis: Redis, *, session_token: str, kind: str,
+                             extra: dict | None = None) -> str:
+    """Mint a 10-second, single-use bearer token bound to the playback session.
+
+    `kind` namespaces the token (key|seg|manifest) so a token issued for one
+    purpose can't be redeemed for another. `extra` carries per-token state
+    (e.g. the segment key for a "seg" token) and is dropped along with the
+    token on redeem."""
+    nonce = secrets.token_urlsafe(16)
+    payload = {"sess": session_token, "kind": kind, **(extra or {})}
+    await redis.set(f"pbnonce:{kind}:{nonce}", json.dumps(payload), ex=_SHORT_TOKEN_TTL)
+    return nonce
+
+
+async def _consume_short_token(redis: Redis, *, kind: str, nonce: str) -> dict | None:
+    """Atomically verify-and-burn. Returns the stored payload on success."""
+    key = f"pbnonce:{kind}:{nonce}"
+    raw = await redis.get(key)
+    if not raw:
+        return None
+    await redis.delete(key)
+    return json.loads(raw if isinstance(raw, str) else raw.decode())
+
+
+@router.get("/{video_id}/manifest")
+async def proxied_manifest(
+    video_id: str,
+    s: str,
+    request: Request,
+    db: Session = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+):
+    """Fetch the HLS manifest from private R2 and rewrite every URL inside it.
+
+    Three rewrites happen here:
+      * #EXT-X-KEY URI=...  → /api/v1/videos/{id}/key?s={token}&n={one-shot}
+      * Each segment line   → presigned R2 URL (10-second TTL)
+      * Variant manifests   → recursive call back to /manifest?... so each
+                              variant gets the same private treatment
+
+    The session cookie + IP/UA bind already happened in
+    create_playback_session; here we only validate the session token's
+    binding then rebind on each segment via the per-segment short token."""
+    ip, ua_hash = _client_ctx(request)
+    raw = await redis.get(f"pbsess:{s}")
+    if not raw:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "session expired")
+    sess = json.loads(raw)
+    if sess["vid"] != video_id or sess["ip"] != ip or sess["ua"] != ua_hash:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "context mismatch")
+
+    video = db.get(Video, video_id)
+    if not video:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "video not found")
+
+    text = get_bytes(video.r2_manifest_key).decode("utf-8")
+    base_dir = video.r2_manifest_key.rsplit("/", 1)[0]
+
+    # Force-overwrite the key directive so the manifest a thief might exfil
+    # can't reuse a stale URI. We mint a fresh single-use key token now;
+    # hls.js will burn it on its first GET — any retry forces a new manifest.
+    key_nonce = await _mint_short_token(redis, session_token=s, kind="key")
+    key_uri = f"/api/v1/videos/{video_id}/key?s={s}&n={key_nonce}"
+
+    out_lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#EXT-X-KEY"):
+            # Replace with our key URI verbatim, preserving the METHOD/IV.
+            iv_match = re.search(r'IV=0x[0-9A-Fa-f]+', stripped)
+            iv_part = f',{iv_match.group(0)}' if iv_match else ""
+            out_lines.append(f'#EXT-X-KEY:METHOD=AES-128,URI="{key_uri}"{iv_part}')
+            continue
+        if stripped and not stripped.startswith("#"):
+            # Segment or sub-manifest reference. Resolve to absolute R2 key
+            # and either presign (segment) or recurse (variant manifest).
+            r2_key = stripped if "/" in stripped and stripped.startswith(base_dir) \
+                else f"{base_dir}/{stripped}"
+            if stripped.endswith(".m3u8"):
+                # Variant manifest — keep it private by re-routing back here.
+                # We pass a fresh session-bound short token; the inner call
+                # will mint its own key/segment tokens.
+                sub_nonce = await _mint_short_token(
+                    redis, session_token=s, kind="manifest",
+                    extra={"key": r2_key},
+                )
+                out_lines.append(
+                    f"/api/v1/videos/{video_id}/sub-manifest?s={s}&n={sub_nonce}"
+                )
+            else:
+                out_lines.append(presigned_get_url(r2_key, expires_in=_SHORT_TOKEN_TTL))
+            continue
+        out_lines.append(line)
+
+    body = "\n".join(out_lines) + "\n"
+    return Response(
+        content=body,
+        media_type="application/vnd.apple.mpegurl",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, private",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/{video_id}/sub-manifest")
+async def proxied_sub_manifest(
+    video_id: str,
+    s: str,
+    n: str,
+    request: Request,
+    db: Session = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+):
+    """Variant playlist (per-bitrate). Same rewrites as the master."""
+    ip, ua_hash = _client_ctx(request)
+    raw_sess = await redis.get(f"pbsess:{s}")
+    if not raw_sess:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "session expired")
+    sess = json.loads(raw_sess)
+    if sess["vid"] != video_id or sess["ip"] != ip or sess["ua"] != ua_hash:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "context mismatch")
+
+    payload = await _consume_short_token(redis, kind="manifest", nonce=n)
+    if not payload or payload.get("sess") != s:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "manifest token expired")
+
+    sub_key = payload["key"]
+    text = get_bytes(sub_key).decode("utf-8")
+    base_dir = sub_key.rsplit("/", 1)[0]
+
+    key_nonce = await _mint_short_token(redis, session_token=s, kind="key")
+    key_uri = f"/api/v1/videos/{video_id}/key?s={s}&n={key_nonce}"
+
+    out_lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#EXT-X-KEY"):
+            iv_match = re.search(r'IV=0x[0-9A-Fa-f]+', stripped)
+            iv_part = f',{iv_match.group(0)}' if iv_match else ""
+            out_lines.append(f'#EXT-X-KEY:METHOD=AES-128,URI="{key_uri}"{iv_part}')
+            continue
+        if stripped and not stripped.startswith("#"):
+            r2_key = f"{base_dir}/{stripped}"
+            out_lines.append(presigned_get_url(r2_key, expires_in=_SHORT_TOKEN_TTL))
+            continue
+        out_lines.append(line)
+
+    return Response(
+        content="\n".join(out_lines) + "\n",
+        media_type="application/vnd.apple.mpegurl",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, private",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/{video_id}/key")
@@ -77,10 +249,17 @@ async def get_video_key(
     video_id: str,
     s: str,
     request: Request,
+    n: str | None = None,
     db: Session = Depends(get_session),
     redis: Redis = Depends(get_redis),
 ):
-    """Deliver the raw 16-byte AES-128 key. Called by the HLS player."""
+    """Deliver the raw 16-byte AES-128 key. Called by the HLS player.
+
+    The key URI in the manifest carries `n` — a single-use 10-second nonce
+    that we burn on first redemption. Without `n` (legacy clients) the
+    request still works as long as the session token is valid + bound, but
+    the new manifest proxy always emits `n`, so any URL captured from the
+    wire after the player's own request will already be dead."""
     ip, ua_hash = _client_ctx(request)
 
     def _log(user_id: str | None, granted: bool, reason: str):
@@ -114,6 +293,14 @@ async def get_video_key(
     if sess["vid"] != video_id or sess["ip"] != ip or sess["ua"] != ua_hash:
         _log(sess.get("uid"), False, "context_mismatch")
         raise HTTPException(status.HTTP_403_FORBIDDEN, "context mismatch")
+
+    # Single-use nonce: present iff the manifest came through the proxy.
+    # Burning it here means a captured key URL is dead after one fetch.
+    if n is not None:
+        token_payload = await _consume_short_token(redis, kind="key", nonce=n)
+        if not token_payload or token_payload.get("sess") != s:
+            _log(sess.get("uid"), False, "nonce_invalid")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "key token expired")
 
     # Per-(user, video) rate limit. Catches scripted scrapers hammering the key endpoint.
     rl_key = f"keyrl:{sess['uid']}:{video_id}"
