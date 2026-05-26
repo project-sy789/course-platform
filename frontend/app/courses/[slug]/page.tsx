@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, ApiError, createCheckoutSession } from "@/lib/api";
+import { formatTHB } from "@/lib/format";
 
 type CourseDetail = {
   id: string;
@@ -39,14 +40,14 @@ export default function CoursePage({ params }: { params: { slug: string } }) {
     }
   }
 
-  if (error) return <main className="p-8 text-red-400">Error: {error}</main>;
-  if (!course) return <main className="p-8 opacity-60">Loading…</main>;
+  if (error) return <main className="p-8 text-red-400">เกิดข้อผิดพลาด: {error}</main>;
+  if (!course) return <main className="p-8 opacity-60">กำลังโหลด…</main>;
 
   const isFree = course.price_cents === 0;
 
   return (
     <main className="max-w-3xl mx-auto p-8">
-      <Link href="/" className="text-sm underline opacity-70">← Courses</Link>
+      <Link href="/" className="text-sm underline opacity-70">← คอร์สทั้งหมด</Link>
 
       <div className="mt-4 flex items-start justify-between gap-4">
         <div>
@@ -58,7 +59,7 @@ export default function CoursePage({ params }: { params: { slug: string } }) {
             onClick={buy} disabled={buying}
             className="rounded-md bg-white text-black font-medium px-4 py-2 disabled:opacity-50 whitespace-nowrap"
           >
-            {buying ? "…" : `Buy $${(course.price_cents / 100).toFixed(2)}`}
+            {buying ? "…" : `ซื้อ ${formatTHB(course.price_cents)}`}
           </button>
         )}
       </div>
@@ -75,7 +76,7 @@ export default function CoursePage({ params }: { params: { slug: string } }) {
                 {l.title}
               </span>
               {l.is_preview && (
-                <span className="text-xs bg-neutral-800 px-2 py-0.5 rounded">Preview</span>
+                <span className="text-xs bg-neutral-800 px-2 py-0.5 rounded">ดูฟรี</span>
               )}
             </Link>
           </li>

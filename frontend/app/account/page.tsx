@@ -41,7 +41,7 @@ export default function AccountPage() {
 
   async function deleteAccount() {
     if (!me) return;
-    if (!confirm("This anonymizes your account and revokes all sessions. Continue?")) return;
+    if (!confirm("การลบบัญชีจะล้างข้อมูลส่วนตัวและออกจากระบบทุกอุปกรณ์ ดำเนินการต่อ?")) return;
     setBusy(true); setError(null);
     try {
       await apiFetch("/api/v1/account/delete", {
@@ -66,53 +66,53 @@ export default function AccountPage() {
     }
   }
 
-  if (!me) return <main className="p-8 opacity-60">Loading…</main>;
+  if (!me) return <main className="p-8 opacity-60">กำลังโหลด…</main>;
 
   return (
     <main className="max-w-2xl mx-auto p-8 space-y-8">
-      <h1 className="text-2xl font-semibold">Account</h1>
+      <h1 className="text-2xl font-semibold">บัญชีของฉัน</h1>
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       <section className="rounded-xl border border-neutral-800 p-5 space-y-2">
-        <h2 className="font-medium">Profile</h2>
+        <h2 className="font-medium">โปรไฟล์</h2>
         <p className="text-sm opacity-70">{me.email}</p>
         <p className="text-xs opacity-50">
-          Email verified: {me.email_verified ? "yes" : "no"}
+          ยืนยันอีเมลแล้ว: {me.email_verified ? "ใช่" : "ยังไม่"}
         </p>
       </section>
 
       <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
-        <h2 className="font-medium">Sessions</h2>
+        <h2 className="font-medium">เซสชันการเข้าใช้งาน</h2>
         <p className="text-sm opacity-70">
-          Sign out of every device this account is currently logged in on.
+          ออกจากระบบทุกอุปกรณ์ที่บัญชีนี้กำลังใช้งานอยู่
         </p>
         <button
           onClick={logoutAll} disabled={busy}
           className="rounded-md bg-white text-black font-medium px-4 py-2 disabled:opacity-50"
         >
-          Sign out everywhere
+          ออกจากระบบทุกอุปกรณ์
         </button>
       </section>
 
       <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
-        <h2 className="font-medium">Export data</h2>
+        <h2 className="font-medium">ดาวน์โหลดข้อมูลของฉัน</h2>
         <p className="text-sm opacity-70">
-          Download a JSON copy of every record we hold for your account.
+          ดาวน์โหลดไฟล์ JSON ของข้อมูลทั้งหมดที่ระบบเก็บไว้สำหรับบัญชีนี้
         </p>
         <button
           onClick={exportData} disabled={busy}
           className="rounded-md bg-white text-black font-medium px-4 py-2 disabled:opacity-50"
         >
-          Download my data
+          ดาวน์โหลดข้อมูล
         </button>
       </section>
 
       <section className="rounded-xl border border-red-900/60 p-5 space-y-3">
-        <h2 className="font-medium text-red-300">Delete account</h2>
+        <h2 className="font-medium text-red-300">ลบบัญชี</h2>
         <p className="text-sm opacity-70">
-          Anonymizes your profile and removes lesson progress + enrollments.
-          Payment records are kept for accounting.
-          Type your email to confirm.
+          ระบบจะล้างข้อมูลส่วนตัว ลบความคืบหน้าการเรียนและสิทธิ์เรียนทั้งหมด
+          ส่วนข้อมูลการชำระเงินจะเก็บไว้ตามกฎหมายบัญชี
+          พิมพ์อีเมลของคุณเพื่อยืนยัน
         </p>
         <input
           type="email" value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)}
@@ -124,7 +124,7 @@ export default function AccountPage() {
           disabled={busy || confirmEmail.trim().toLowerCase() !== me.email.toLowerCase()}
           className="rounded-md bg-red-600 text-white font-medium px-4 py-2 disabled:opacity-40"
         >
-          Delete my account
+          ลบบัญชีของฉัน
         </button>
       </section>
     </main>

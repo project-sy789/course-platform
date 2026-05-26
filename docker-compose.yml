@@ -24,6 +24,36 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Self-hosted SMTP via Postfix. Used by the API as a relay-or-direct mail
+  # transport — cheaper and more private than Resend/Postmark, but you OWN
+  # the deliverability. For production you MUST set up:
+  #   * PTR (reverse DNS) for the VPS IP, matching MAIL_HOSTNAME
+  #   * SPF record on the sending domain
+  #   * DKIM signing (set OPENDKIM_KEYS via volume + DOMAIN_VHOST)
+  #   * DMARC record on the sending domain
+  # Outbound port 25 is blocked on most hosting; either use a smarthost
+  # (RELAY_HOST=smtp.sendgrid.net etc.) or open 587 on the receiving side.
+  mailserver:
+    image: boky/postfix:v4.0.0
+    environment:
+      ALLOWED_SENDER_DOMAINS: ${MAIL_DOMAIN}
+      HOSTNAME: ${MAIL_HOSTNAME}
+      # Optional smarthost: leave empty to deliver direct over port 25.
+      # Set to e.g. "[smtp.sendgrid.net]:587" + RELAYHOST_USERNAME/PASSWORD
+      # to relay through a transactional provider while keeping local delivery
+      # semantics (api just talks to mailserver:587).
+      RELAYHOST: ${MAIL_RELAYHOST:-}
+      RELAYHOST_USERNAME: ${MAIL_RELAY_USER:-}
+      RELAYHOST_PASSWORD: ${MAIL_RELAY_PASSWORD:-}
+      POSTFIX_message_size_limit: "26214400"
+    volumes:
+      - mail_data:/var/spool/postfix
+      # DKIM keys. Generate with `opendkim-genkey` and mount the key dir here.
+      - ./mail/dkim:/etc/opendkim/keys:ro
+    expose:
+      - "587"
+    restart: unless-stopped
+
   api:
     build: ./backend
     env_file: .env
@@ -142,3 +172,4 @@ volumes:
   grafana_data: {}
   loki_data: {}
   upload_buffer: {}
+  mail_data: {}

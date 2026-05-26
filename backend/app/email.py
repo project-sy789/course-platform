@@ -40,29 +40,29 @@ async def send_email(to: str, subject: str, body_text: str, body_html: str | Non
 
 def render_verification_email(verify_url: str) -> tuple[str, str]:
     text = (
-        f"Welcome!\n\n"
-        f"Verify your email by clicking this link:\n\n  {verify_url}\n\n"
-        f"This link expires in 24 hours.\n"
+        "ยินดีต้อนรับ!\n\n"
+        f"กรุณายืนยันอีเมลโดยคลิกลิงก์ด้านล่าง:\n\n  {verify_url}\n\n"
+        "ลิงก์นี้จะหมดอายุภายใน 24 ชั่วโมง\n"
     )
     html = (
-        f'<p>Welcome!</p>'
-        f'<p>Verify your email: <a href="{verify_url}">{verify_url}</a></p>'
-        f'<p style="color:#888">This link expires in 24 hours.</p>'
+        '<p>ยินดีต้อนรับ!</p>'
+        f'<p>ยืนยันอีเมลของคุณ: <a href="{verify_url}">{verify_url}</a></p>'
+        '<p style="color:#888">ลิงก์นี้จะหมดอายุภายใน 24 ชั่วโมง</p>'
     )
     return text, html
 
 
 def render_password_reset_email(reset_url: str) -> tuple[str, str]:
     text = (
-        f"A password reset was requested for your account.\n\n"
-        f"If this was you, click the link below to set a new password:\n\n"
+        "มีคำขอรีเซ็ตรหัสผ่านสำหรับบัญชีของคุณ\n\n"
+        "หากคุณเป็นผู้ส่งคำขอ คลิกลิงก์ด้านล่างเพื่อตั้งรหัสผ่านใหม่:\n\n"
         f"  {reset_url}\n\n"
-        f"The link expires in 30 minutes. If you didn't request this, ignore this message.\n"
+        "ลิงก์นี้จะหมดอายุภายใน 30 นาที หากไม่ใช่คุณ กรุณาเพิกเฉยข้อความนี้\n"
     )
     html = (
-        f'<p>A password reset was requested for your account.</p>'
-        f'<p>If this was you: <a href="{reset_url}">Reset password</a></p>'
-        f'<p style="color:#888">The link expires in 30 minutes. '
-        f'If you didn\'t request this, ignore this message.</p>'
+        '<p>มีคำขอรีเซ็ตรหัสผ่านสำหรับบัญชีของคุณ</p>'
+        f'<p>หากเป็นคุณ: <a href="{reset_url}">ตั้งรหัสผ่านใหม่</a></p>'
+        '<p style="color:#888">ลิงก์นี้จะหมดอายุภายใน 30 นาที '
+        'หากไม่ใช่คุณ กรุณาเพิกเฉยข้อความนี้</p>'
     )
     return text, html

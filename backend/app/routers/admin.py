@@ -321,6 +321,85 @@ def finalize_upload(
     }
 
 
+# ---------- System settings (read-only inspector) ----------
+# Surfaces which integrations are wired up so admins can confirm the deploy
+# without SSH. Sensitive values (keys, passwords) are NEVER returned in full —
+# only their presence + last 4 chars to confirm what's loaded.
+
+def _mask(v: str) -> str:
+    if not v:
+        return ""
+    if len(v) <= 4:
+        return "****"
+    return f"****{v[-4:]}"
+
+
+@router.get("/settings")
+def get_settings(_: User = Depends(current_admin)):
+    return {
+        "email": {
+            "smtp_host": settings.SMTP_HOST,
+            "smtp_port": settings.SMTP_PORT,
+            "smtp_use_tls": settings.SMTP_USE_TLS,
+            "smtp_user": settings.SMTP_USER or None,
+            "smtp_password_set": bool(settings.SMTP_PASSWORD),
+            "smtp_from": settings.SMTP_FROM,
+            "frontend_url": settings.FRONTEND_URL,
+        },
+        "storage": {
+            "r2_account_id_tail": _mask(settings.R2_ACCOUNT_ID),
+            "r2_bucket": settings.R2_BUCKET or None,
+            "r2_public_base": settings.R2_PUBLIC_BASE,
+            "r2_creds_set": bool(settings.R2_ACCESS_KEY_ID and settings.R2_SECRET_ACCESS_KEY),
+        },
+        "backup": {
+            "aws_region": settings.AWS_REGION,
+            "aws_bucket": settings.AWS_BACKUP_BUCKET or None,
+            "storage_class": settings.AWS_BACKUP_STORAGE_CLASS,
+            "aws_creds_set": bool(settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY),
+        },
+        "payments": {
+            "stripe_secret_set": bool(settings.STRIPE_SECRET_KEY),
+            "stripe_webhook_set": bool(settings.STRIPE_WEBHOOK_SECRET),
+            "currency": settings.STRIPE_CURRENCY,
+        },
+        "security": {
+            "kek_set": bool(settings.KEK_BASE64),
+            "jwt_secret_set": bool(settings.JWT_SECRET),
+            "jwt_ttl_min": settings.JWT_TTL_MIN,
+            "pb_session_ttl_sec": settings.PB_SESSION_TTL_SEC,
+            "key_rate_limit_per_min": settings.KEY_RATE_LIMIT_PER_MIN,
+            "max_concurrent_sessions": settings.MAX_CONCURRENT_SESSIONS,
+            "e2e_bypass_set": bool(settings.E2E_BYPASS_TOKEN),
+        },
+        "cors_origins": [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()],
+    }
+
+
+class TestEmailBody(BaseModel):
+    to: EmailStr
+
+
+@router.post("/settings/test-email")
+async def admin_send_test_email(
+    body: TestEmailBody,
+    _: User = Depends(current_admin),
+):
+    """Send a one-shot test email through the configured SMTP relay.
+
+    If SMTP_HOST is empty this is a no-op (logs a warning); useful to confirm
+    Postfix → external relay → inbox before going live."""
+    from ..email import send_email
+    await send_email(
+        body.to,
+        "ทดสอบระบบส่งอีเมล",
+        "นี่คือข้อความทดสอบจาก Course Platform — หากได้รับแสดงว่าระบบ SMTP ทำงานปกติ",
+        "<p>นี่คือข้อความทดสอบจาก Course Platform</p>"
+        "<p style='color:#888'>หากได้รับแสดงว่าระบบ SMTP ทำงานปกติ</p>",
+    )
+    return {"ok": True}
+
+
 # ---------- Background encode jobs ----------
 # Admin uploads ONE raw source via /uploads/{id}/file, then POSTs here. The arq
 # worker picks it up, runs encode_multibitrate.sh, uploads the ladder to R2,

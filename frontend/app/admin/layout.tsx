@@ -10,6 +10,7 @@ const NAV = [
   { href: "/admin/upload", label: "Upload video" },
   { href: "/admin/users", label: "Users" },
   { href: "/admin/logs", label: "Access logs" },
+  { href: "/admin/settings", label: "Settings" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

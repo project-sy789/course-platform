@@ -22,7 +22,6 @@ import io
 import secrets
 
 from pypdf import PdfReader, PdfWriter
-from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 
 
@@ -63,7 +62,7 @@ def watermark_pdf(pdf_bytes: bytes, *, user_id: str, user_email: str,
                   watermark_id: str) -> bytes:
     """Return a new PDF with per-user attribution stamped on every page."""
     ts = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    footer = f"Licensed to {user_email} · id:{watermark_id} · {ts}"
+    footer = f"สำหรับ {user_email} · รหัส:{watermark_id} · {ts}"
 
     src = PdfReader(io.BytesIO(pdf_bytes))
     out = PdfWriter()

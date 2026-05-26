@@ -20,15 +20,15 @@ export default function ForgotPasswordPage() {
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       <form onSubmit={submit} className="w-full max-w-sm rounded-xl border border-neutral-800 p-6 space-y-4">
-        <h1 className="text-xl font-semibold">Forgot password</h1>
+        <h1 className="text-xl font-semibold">ลืมรหัสผ่าน</h1>
         {sent ? (
           <p className="text-sm opacity-80">
-            If that email is registered, a reset link is on its way. Check your inbox.
+            หากอีเมลนี้ลงทะเบียนไว้ในระบบ เราจะส่งลิงก์รีเซ็ตรหัสผ่านให้ในไม่กี่นาที กรุณาตรวจกล่องจดหมาย
           </p>
         ) : (
           <>
             <p className="text-sm opacity-70">
-              Enter the email you registered with. We&apos;ll send a one-time reset link.
+              กรอกอีเมลที่ใช้สมัคร เราจะส่งลิงก์รีเซ็ตรหัสผ่านให้ใช้งานครั้งเดียว
             </p>
             <input
               type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
@@ -37,7 +37,7 @@ export default function ForgotPasswordPage() {
             />
             <button disabled={busy}
                     className="w-full rounded-md bg-white text-black font-medium py-2 disabled:opacity-50">
-              {busy ? "…" : "Send reset link"}
+              {busy ? "…" : "ส่งลิงก์รีเซ็ต"}
             </button>
           </>
         )}

@@ -29,13 +29,15 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_BACKUP_STORAGE_CLASS: str = "DEEP_ARCHIVE"
 
-    # Email (SMTP). Use a transactional provider in production (Resend, Postmark, SES).
-    SMTP_HOST: str = ""
+    # Email (SMTP). Default targets the in-stack Postfix container; switch
+    # SMTP_HOST to a managed provider (Resend/Postmark/SES) any time without
+    # touching code — the relay is a deploy concern, not an app concern.
+    SMTP_HOST: str = "mailserver"
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = "no-reply@example.com"
-    SMTP_USE_TLS: bool = True
+    SMTP_USE_TLS: bool = False  # in-cluster Postfix is plain; flip true for external relay
 
     # Public-facing URL of the frontend, used in verification + reset links.
     FRONTEND_URL: str = "http://localhost:3000"
@@ -43,7 +45,7 @@ class Settings(BaseSettings):
     # Stripe
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
-    STRIPE_CURRENCY: str = "usd"
+    STRIPE_CURRENCY: str = "thb"
 
     CORS_ORIGINS: str = "https://app.example.com"
 
