@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -26,6 +26,7 @@ import stripe
 from ..config import settings
 from ..db import get_redis, get_session
 from ..deps import current_admin, current_user, compute_enrollment_expiry
+from ..invoice import split_vat_inclusive, allocate_invoice_number, render_invoice_pdf
 from ..logging import log
 from ..models import Course, Enrollment, Payment, User
 
@@ -119,11 +120,20 @@ def create_checkout_session(
         metadata={"user_id": str(user.id), "course_id": str(course.id)},
     )
 
+    subtotal_cents, vat_cents = split_vat_inclusive(course.price_cents)
     db.add(Payment(
         user_id=user.id,
         course_id=course.id,
         stripe_session_id=session_obj["id"],
         amount_cents=course.price_cents,
+        subtotal_cents=subtotal_cents,
+        vat_cents=vat_cents,
+        # Freeze buyer tax info at checkout time — later profile edits must
+        # not mutate an already-issued invoice.
+        buyer_tax_name=user.tax_name,
+        buyer_tax_id=user.tax_id,
+        buyer_tax_address=user.tax_address,
+        buyer_tax_branch=user.tax_branch,
         currency=settings.STRIPE_CURRENCY,
         status="pending",
     ))
@@ -167,6 +177,8 @@ async def stripe_webhook(
 
         payment.status = "paid"
         payment.stripe_payment_intent = session_obj.get("payment_intent")
+        if not payment.invoice_number:
+            payment.invoice_number = allocate_invoice_number(db)
 
         existing = db.scalar(
             select(Enrollment).where(
@@ -238,3 +250,55 @@ async def admin_refund_payment(
     _apply_refund(db, payment)
     await _revoke_user_sessions(redis, payment.user_id)
     return {"ok": True, "refund_id": refund.get("id")}
+
+
+# ---------- Buyer-facing payment list + tax invoice ----------
+
+@router.get("/payments")
+def list_my_payments(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_session),
+):
+    rows = db.scalars(
+        select(Payment).where(Payment.user_id == user.id).order_by(Payment.created_at.desc())
+    ).all()
+    return [
+        {
+            "id": str(p.id),
+            "course_id": str(p.course_id),
+            "amount_cents": p.amount_cents,
+            "subtotal_cents": p.subtotal_cents,
+            "vat_cents": p.vat_cents,
+            "currency": p.currency,
+            "status": p.status,
+            "invoice_number": p.invoice_number,
+            "created_at": p.created_at.isoformat(),
+        } for p in rows
+    ]
+
+
+@router.get("/payments/{payment_id}/invoice")
+def download_invoice(
+    payment_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_session),
+):
+    """Return the tax invoice PDF for one of the caller's payments.
+
+    Admins can pull any invoice; everyone else only their own. Only `paid`
+    payments have an invoice number — pending / failed return 409."""
+    payment = db.get(Payment, payment_id)
+    if not payment:
+        raise HTTPException(404, "payment not found")
+    if payment.user_id != user.id and not user.is_admin:
+        raise HTTPException(403, "not your payment")
+    if payment.status != "paid" or not payment.invoice_number:
+        raise HTTPException(409, "no invoice for unpaid payment")
+    course = db.get(Course, payment.course_id)
+    pdf = render_invoice_pdf(payment, course.title if course else "(course)")
+    fname = f"{payment.invoice_number}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )

@@ -47,6 +47,25 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_CURRENCY: str = "thb"
 
+    # Thai VAT (ภาษีมูลค่าเพิ่ม). Course prices are stored as the VAT-INCLUSIVE
+    # amount in `price_cents` — at payment time we back-compute subtotal+vat
+    # using this rate and freeze them on the Payment row. If Thailand changes
+    # the standard rate, historic invoices still print whatever was frozen.
+    VAT_RATE_PERCENT: float = 7.0
+
+    # Issuer (seller) info that prints on every tax invoice (ใบกำกับภาษี).
+    COMPANY_NAME: str = ""
+    COMPANY_TAX_ID: str = ""
+    COMPANY_ADDRESS: str = ""
+    COMPANY_BRANCH: str = "สำนักงานใหญ่"
+    COMPANY_PHONE: str = ""
+    # Path inside the API container to a Thai-glyph TTF (Sarabun, Noto Sans Thai,
+    # etc.). Must be reachable from the running uvicorn process. Leave empty to
+    # fall back to Helvetica — Thai will render as boxes; fine for staging.
+    INVOICE_FONT_PATH: str = ""
+    # Prefix for the sequential invoice number, e.g. "INV2026" → "INV2026-000123".
+    INVOICE_NUMBER_PREFIX: str = "INV"
+
     CORS_ORIGINS: str = "https://app.example.com"
 
     # End-to-end test bypass. Set ONLY in dev/CI; it exposes a route to

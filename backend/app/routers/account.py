@@ -33,6 +33,52 @@ from ..models import (
 router = APIRouter(prefix="/api/v1/account", tags=["account"])
 
 
+# ---------- Tax-invoice profile (ใบกำกับภาษี) ----------
+
+class TaxInfoOut(BaseModel):
+    tax_name: str | None = None
+    tax_id: str | None = None
+    tax_address: str | None = None
+    tax_branch: str | None = None
+
+
+class TaxInfoIn(BaseModel):
+    # All optional — POSTing every field as null clears the profile.
+    tax_name: str | None = None
+    tax_id: str | None = None
+    tax_address: str | None = None
+    tax_branch: str | None = None
+
+
+@router.get("/tax-info", response_model=TaxInfoOut)
+def get_tax_info(user: User = Depends(current_user)):
+    return TaxInfoOut(
+        tax_name=user.tax_name, tax_id=user.tax_id,
+        tax_address=user.tax_address, tax_branch=user.tax_branch,
+    )
+
+
+@router.put("/tax-info", response_model=TaxInfoOut)
+def update_tax_info(
+    body: TaxInfoIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_session),
+):
+    """Update buyer-side tax info. Only fields that pass the cheap shape
+    checks here ride through; Thai TIN is exactly 13 digits."""
+    if body.tax_id is not None and body.tax_id.strip():
+        tid = body.tax_id.strip()
+        if not (tid.isdigit() and len(tid) == 13):
+            raise HTTPException(422, "tax_id must be 13 digits")
+        body.tax_id = tid
+    user.tax_name = body.tax_name or None
+    user.tax_id = body.tax_id or None
+    user.tax_address = body.tax_address or None
+    user.tax_branch = body.tax_branch or None
+    db.commit()
+    return TaxInfoOut(**body.model_dump())
+
+
 @router.get("/export")
 def export_my_data(
     user: User = Depends(current_user),

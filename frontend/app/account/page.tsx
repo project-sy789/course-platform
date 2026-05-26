@@ -2,8 +2,25 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api";
+import { formatTHB, formatThaiDate } from "@/lib/format";
 
 type Me = { id: string; email: string; email_verified: boolean };
+type TaxInfo = {
+  tax_name: string | null;
+  tax_id: string | null;
+  tax_address: string | null;
+  tax_branch: string | null;
+};
+type PaymentRow = {
+  id: string;
+  amount_cents: number;
+  subtotal_cents: number | null;
+  vat_cents: number | null;
+  currency: string;
+  status: string;
+  invoice_number: string | null;
+  created_at: string;
+};
 
 export default function AccountPage() {
   const router = useRouter();
@@ -11,6 +28,9 @@ export default function AccountPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmEmail, setConfirmEmail] = useState("");
   const [busy, setBusy] = useState(false);
+  const [tax, setTax] = useState<TaxInfo>({ tax_name: "", tax_id: "", tax_address: "", tax_branch: "" });
+  const [taxSaved, setTaxSaved] = useState(false);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
 
   useEffect(() => {
     apiFetch<Me>("/api/v1/auth/me")
@@ -19,7 +39,33 @@ export default function AccountPage() {
         if (e.status === 401) router.push("/login");
         else setError(e.message);
       });
+    apiFetch<TaxInfo>("/api/v1/account/tax-info").then((t) =>
+      setTax({
+        tax_name: t.tax_name ?? "", tax_id: t.tax_id ?? "",
+        tax_address: t.tax_address ?? "", tax_branch: t.tax_branch ?? "",
+      })
+    ).catch(() => {});
+    apiFetch<PaymentRow[]>("/api/v1/payments").then(setPayments).catch(() => setPayments([]));
   }, [router]);
+
+  async function saveTax(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setError(null); setTaxSaved(false);
+    try {
+      await apiFetch("/api/v1/account/tax-info", {
+        method: "PUT",
+        body: JSON.stringify(tax),
+      });
+      setTaxSaved(true);
+    } catch (e: any) {
+      setError(e?.message ?? "save failed");
+    } finally { setBusy(false); }
+  }
+
+  function downloadInvoice(p: PaymentRow) {
+    // PDF endpoint enforces auth via cookie — open in new tab.
+    const url = `${process.env.NEXT_PUBLIC_API_BASE}/api/v1/payments/${p.id}/invoice`;
+    window.open(url, "_blank");
+  }
 
   async function exportData() {
     setBusy(true); setError(null);
@@ -79,6 +125,73 @@ export default function AccountPage() {
         <p className="text-xs opacity-50">
           ยืนยันอีเมลแล้ว: {me.email_verified ? "ใช่" : "ยังไม่"}
         </p>
+      </section>
+
+      <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
+        <h2 className="font-medium">ข้อมูลออกใบกำกับภาษี</h2>
+        <p className="text-sm opacity-70">
+          กรอกข้อมูลที่ต้องการให้แสดงบนใบกำกับภาษี (เลขประจำตัวผู้เสียภาษี 13 หลัก, ที่อยู่)
+          ระบบจะใช้ข้อมูลนี้ออกใบกำกับตอนที่คุณซื้อคอร์ส
+        </p>
+        <form onSubmit={saveTax} className="grid gap-3">
+          <input
+            placeholder="ชื่อ-นามสกุล หรือ ชื่อนิติบุคคล"
+            value={tax.tax_name ?? ""} onChange={(e) => setTax({ ...tax, tax_name: e.target.value })}
+            className="rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2"
+          />
+          <input
+            placeholder="เลขประจำตัวผู้เสียภาษี (13 หลัก)"
+            inputMode="numeric" maxLength={13}
+            value={tax.tax_id ?? ""} onChange={(e) => setTax({ ...tax, tax_id: e.target.value.replace(/\D/g, "") })}
+            className="rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2 font-mono"
+          />
+          <textarea
+            placeholder="ที่อยู่สำหรับออกใบกำกับภาษี" rows={3}
+            value={tax.tax_address ?? ""} onChange={(e) => setTax({ ...tax, tax_address: e.target.value })}
+            className="rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2"
+          />
+          <input
+            placeholder="สาขา (เช่น สำนักงานใหญ่)"
+            value={tax.tax_branch ?? ""} onChange={(e) => setTax({ ...tax, tax_branch: e.target.value })}
+            className="rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2"
+          />
+          <button
+            disabled={busy}
+            className="rounded-md bg-white text-black font-medium py-2 disabled:opacity-50"
+          >
+            {busy ? "…" : "บันทึก"}
+          </button>
+          {taxSaved && <p className="text-sm text-emerald-400">บันทึกแล้ว</p>}
+        </form>
+      </section>
+
+      <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
+        <h2 className="font-medium">ประวัติการชำระเงิน / ใบกำกับภาษี</h2>
+        {payments.length === 0 ? (
+          <p className="text-sm opacity-60">ยังไม่มีรายการ</p>
+        ) : (
+          <ul className="divide-y divide-neutral-800 rounded-lg border border-neutral-800 overflow-hidden">
+            {payments.map((p) => (
+              <li key={p.id} className="flex items-center justify-between px-4 py-3 text-sm">
+                <div>
+                  <div>{formatThaiDate(p.created_at)} · {formatTHB(p.amount_cents)}</div>
+                  <div className="text-xs opacity-60">
+                    สถานะ: {p.status}
+                    {p.invoice_number && <> · เลขที่ {p.invoice_number}</>}
+                  </div>
+                </div>
+                {p.status === "paid" && p.invoice_number && (
+                  <button
+                    onClick={() => downloadInvoice(p)}
+                    className="rounded-md bg-white text-black text-xs font-medium px-3 py-1.5"
+                  >
+                    ดาวน์โหลดใบกำกับภาษี
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="rounded-xl border border-neutral-800 p-5 space-y-3">

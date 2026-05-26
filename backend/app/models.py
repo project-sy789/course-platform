@@ -20,6 +20,12 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Tax invoice (ใบกำกับภาษี) — optional. Filled in if the user wants invoices
+    # made out to a company or to themselves with a 13-digit Thai tax ID.
+    tax_name: Mapped[str | None] = mapped_column(Text)
+    tax_id: Mapped[str | None] = mapped_column(Text)
+    tax_address: Mapped[str | None] = mapped_column(Text)
+    tax_branch: Mapped[str | None] = mapped_column(Text)  # "สำนักงานใหญ่" or branch code
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -141,6 +147,20 @@ class Payment(Base):
     stripe_session_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     stripe_payment_intent: Mapped[str | None] = mapped_column(Text)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    # VAT breakdown (Thai 7% VAT). amount_cents = subtotal_cents + vat_cents.
+    # Computed at payment-creation time from the configured VAT_RATE so historic
+    # invoices stay correct even if the rate changes later.
+    subtotal_cents: Mapped[int | None] = mapped_column(Integer)
+    vat_cents: Mapped[int | None] = mapped_column(Integer)
+    # Sequential tax-invoice number (เลขที่ใบกำกับภาษี). Allocated only on
+    # successful payment; remains NULL for pending/failed.
+    invoice_number: Mapped[str | None] = mapped_column(Text, unique=True)
+    # Snapshot of buyer tax info at the moment of issue — invoices must not
+    # mutate when the user later changes their profile.
+    buyer_tax_name: Mapped[str | None] = mapped_column(Text)
+    buyer_tax_id: Mapped[str | None] = mapped_column(Text)
+    buyer_tax_address: Mapped[str | None] = mapped_column(Text)
+    buyer_tax_branch: Mapped[str | None] = mapped_column(Text)
     currency: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)  # pending|paid|refunded|failed
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
