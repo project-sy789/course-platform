@@ -91,3 +91,27 @@ async def ready(
         checks["redis"] = f"fail: {type(e).__name__}"
         status_code = 503
     return JSONResponse({"checks": checks}, status_code=status_code)
+
+
+# ---------- E2E bypass ----------
+# Only registered when E2E_BYPASS_TOKEN is set. In production this leaves the
+# route off the OpenAPI schema *and* unregistered — defense-in-depth so a
+# misconfigured deploy can't accidentally expose it.
+if settings.E2E_BYPASS_TOKEN:
+    from fastapi import Header, HTTPException
+    from sqlalchemy import update
+    from .models import User
+
+    @app.post("/api/v1/_e2e/verify-email", include_in_schema=False)
+    def _e2e_verify_email(
+        email: str,
+        x_e2e_token: str = Header(default=""),
+        db: Session = Depends(get_session),
+    ):
+        if x_e2e_token != settings.E2E_BYPASS_TOKEN:
+            raise HTTPException(403, "forbidden")
+        db.execute(
+            update(User).where(User.email == email).values(email_verified=True)
+        )
+        db.commit()
+        return {"ok": True}

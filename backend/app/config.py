@@ -47,6 +47,11 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "https://app.example.com"
 
+    # End-to-end test bypass. Set ONLY in dev/CI; it exposes a route to
+    # force-verify a user's email without going through SMTP. Production
+    # must leave this empty (the route is then not registered at all).
+    E2E_BYPASS_TOKEN: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
