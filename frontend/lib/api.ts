@@ -36,3 +36,10 @@ export function createPlaybackSession(videoId: string) {
     { method: "POST" },
   );
 }
+
+export function createCheckoutSession(course_slug: string) {
+  return apiFetch<{ checkout_url: string; session_id: string }>(
+    "/api/v1/checkout/session",
+    { method: "POST", body: JSON.stringify({ course_slug }) },
+  );
+}

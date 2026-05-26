@@ -68,6 +68,12 @@ export default function LoginPage() {
         >
           {mode === "login" ? "Don't have an account? Register" : "Already have an account? Sign in"}
         </button>
+
+        {mode === "login" && (
+          <a href="/forgot-password" className="block text-center text-xs underline opacity-60">
+            Forgot password?
+          </a>
+        )}
       </form>
     </main>
   );

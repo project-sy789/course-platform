@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError, createCheckoutSession } from "@/lib/api";
 
 type CourseDetail = {
   id: string;
@@ -15,6 +15,7 @@ type CourseDetail = {
 export default function CoursePage({ params }: { params: { slug: string } }) {
   const [course, setCourse] = useState<CourseDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [buying, setBuying] = useState(false);
 
   useEffect(() => {
     apiFetch<CourseDetail>(`/api/v1/courses/${params.slug}`)
@@ -22,14 +23,45 @@ export default function CoursePage({ params }: { params: { slug: string } }) {
       .catch((e) => setError(e?.message ?? "failed"));
   }, [params.slug]);
 
-  if (error) return <main className="p-8">Error: {error}</main>;
+  async function buy() {
+    if (!course) return;
+    setBuying(true); setError(null);
+    try {
+      const { checkout_url } = await createCheckoutSession(course.slug);
+      window.location.href = checkout_url;
+    } catch (e: any) {
+      if (e instanceof ApiError && e.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      setError(e?.message ?? "failed");
+      setBuying(false);
+    }
+  }
+
+  if (error) return <main className="p-8 text-red-400">Error: {error}</main>;
   if (!course) return <main className="p-8 opacity-60">Loading…</main>;
+
+  const isFree = course.price_cents === 0;
 
   return (
     <main className="max-w-3xl mx-auto p-8">
       <Link href="/" className="text-sm underline opacity-70">← Courses</Link>
-      <h1 className="text-2xl font-semibold mt-4">{course.title}</h1>
-      {course.description && <p className="opacity-70 mt-2">{course.description}</p>}
+
+      <div className="mt-4 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">{course.title}</h1>
+          {course.description && <p className="opacity-70 mt-2">{course.description}</p>}
+        </div>
+        {!isFree && (
+          <button
+            onClick={buy} disabled={buying}
+            className="rounded-md bg-white text-black font-medium px-4 py-2 disabled:opacity-50 whitespace-nowrap"
+          >
+            {buying ? "…" : `Buy $${(course.price_cents / 100).toFixed(2)}`}
+          </button>
+        )}
+      </div>
 
       <ol className="mt-6 divide-y divide-neutral-800 rounded-xl border border-neutral-800 overflow-hidden">
         {course.lessons.map((l) => (

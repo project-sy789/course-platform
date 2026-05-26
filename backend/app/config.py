@@ -24,6 +24,22 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_BACKUP_STORAGE_CLASS: str = "DEEP_ARCHIVE"
 
+    # Email (SMTP). Use a transactional provider in production (Resend, Postmark, SES).
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "no-reply@example.com"
+    SMTP_USE_TLS: bool = True
+
+    # Public-facing URL of the frontend, used in verification + reset links.
+    FRONTEND_URL: str = "http://localhost:3000"
+
+    # Stripe
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_CURRENCY: str = "usd"
+
     CORS_ORIGINS: str = "https://app.example.com"
 
     class Config:

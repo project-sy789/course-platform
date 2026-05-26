@@ -85,8 +85,10 @@ async def client(fake_redis):
 
 @pytest.fixture
 def make_user(db):
-    def _make(email: str = "u@example.com", password: str = "pw-pw-pw-pw", is_admin: bool = False):
-        u = User(email=email, password_hash=hash_password(password), is_admin=is_admin)
+    def _make(email: str = "u@example.com", password: str = "pw-pw-pw-pw",
+              is_admin: bool = False, email_verified: bool = True):
+        u = User(email=email, password_hash=hash_password(password),
+                 is_admin=is_admin, email_verified=email_verified)
         db.add(u); db.commit()
         return u
     return _make
