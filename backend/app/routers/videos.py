@@ -38,6 +38,21 @@ async def create_playback_session(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "video not found")
 
     ip, ua_hash = _client_ctx(request)
+
+    # Concurrent session cap: prevents one account from streaming on N devices at once.
+    sess_set_key = f"pbsess:user:{user.id}"
+    active = await redis.scard(sess_set_key)
+    if active >= settings.MAX_CONCURRENT_SESSIONS:
+        # Drop expired members opportunistically: re-check each token's existence.
+        members = await redis.smembers(sess_set_key)
+        for m in members:
+            if not await redis.exists(f"pbsess:{m}"):
+                await redis.srem(sess_set_key, m)
+        active = await redis.scard(sess_set_key)
+        if active >= settings.MAX_CONCURRENT_SESSIONS:
+            log.warning("session_cap_hit", user_id=str(user.id), active=active)
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many active sessions")
+
     token = secrets.token_urlsafe(32)
     payload = json.dumps({
         "uid": str(user.id),
@@ -46,6 +61,8 @@ async def create_playback_session(
         "ua": ua_hash,
     })
     await redis.set(f"pbsess:{token}", payload, ex=settings.PB_SESSION_TTL_SEC)
+    await redis.sadd(sess_set_key, token)
+    await redis.expire(sess_set_key, settings.PB_SESSION_TTL_SEC * 2)
 
     manifest_url = f"{settings.R2_PUBLIC_BASE}/{video.r2_manifest_key}"
     return {
@@ -97,6 +114,16 @@ async def get_video_key(
     if sess["vid"] != video_id or sess["ip"] != ip or sess["ua"] != ua_hash:
         _log(sess.get("uid"), False, "context_mismatch")
         raise HTTPException(status.HTTP_403_FORBIDDEN, "context mismatch")
+
+    # Per-(user, video) rate limit. Catches scripted scrapers hammering the key endpoint.
+    rl_key = f"keyrl:{sess['uid']}:{video_id}"
+    count = await redis.incr(rl_key)
+    if count == 1:
+        await redis.expire(rl_key, 60)
+    if count > settings.KEY_RATE_LIMIT_PER_MIN:
+        _log(sess["uid"], False, "rate_limited")
+        log.warning("key_rate_limited", user_id=sess["uid"], video_id=str(video_id), count=count)
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many requests")
 
     user = db.get(User, sess["uid"])
     if not user or not user.is_active:

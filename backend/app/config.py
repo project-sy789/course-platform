@@ -8,6 +8,11 @@ class Settings(BaseSettings):
     JWT_ALG: str = "HS256"
     JWT_TTL_MIN: int = 60 * 24 * 7
     PB_SESSION_TTL_SEC: int = 300
+    # Rate limit: max key fetches per (user, video) per minute. HLS w/ ~10s segments
+    # legitimately fetches the same key once per ~50 min via cache; 30/min is generous.
+    KEY_RATE_LIMIT_PER_MIN: int = 30
+    # Max concurrent playback sessions a single user may hold across all videos.
+    MAX_CONCURRENT_SESSIONS: int = 3
     KEK_BASE64: str
     R2_PUBLIC_BASE: str
 
