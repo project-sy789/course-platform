@@ -289,3 +289,51 @@ class LessonProgress(Base):
     )
 
     __table_args__ = (Index("idx_lesson_progress_user", "user_id"),)
+
+
+# ---------- Credit wallet (ระบบเหรียญ/โทเค็น) ----------
+# A user's wallet balance lives in `credit_wallets` for fast reads. Every
+# change is mirrored to an append-only `credit_ledger` so the balance can be
+# audited / reconstructed and an admin reversal is just another ledger row.
+# Both balance and ledger amounts are in satang to match course pricing.
+
+class CreditWallet(Base):
+    __tablename__ = "credit_wallets"
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    balance_satang: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CreditLedger(Base):
+    """Append-only history of every wallet movement.
+
+    `kind` values:
+      - "topup"   admin or future payment provider added credits
+      - "spend"   user redeemed credits to unlock a course/lesson
+      - "refund"  reversal of a previous spend
+      - "adjust"  manual correction by an admin (positive or negative)
+    """
+    __tablename__ = "credit_ledger"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    delta_satang: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_after_satang: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    # Free-form pointer to the source: course_id, lesson_id, payment_id, or
+    # a human note for manual adjustments. Not a FK because multiple targets.
+    ref: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_credit_ledger_user_time", "user_id", "created_at"),
+    )
