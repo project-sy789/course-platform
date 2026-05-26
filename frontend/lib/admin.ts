@@ -31,7 +31,13 @@ export type LogRow = {
 export const adminApi = {
   stats: () => apiFetch<Stats>("/api/v1/admin/stats"),
   users: () => apiFetch<AdminUser[]>("/api/v1/admin/users"),
-  createCourse: (body: { slug: string; title: string; description?: string; price_cents?: number }) =>
+  createCourse: (body: {
+    slug: string;
+    title: string;
+    description?: string;
+    price_cents?: number;
+    access_duration_days?: number | null;
+  }) =>
     apiFetch<{ id: string }>("/api/v1/admin/courses", {
       method: "POST", body: JSON.stringify(body),
     }),

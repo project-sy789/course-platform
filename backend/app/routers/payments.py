@@ -25,7 +25,7 @@ import stripe
 
 from ..config import settings
 from ..db import get_redis, get_session
-from ..deps import current_admin, current_user
+from ..deps import current_admin, current_user, compute_enrollment_expiry
 from ..logging import log
 from ..models import Course, Enrollment, Payment, User
 
@@ -175,7 +175,12 @@ async def stripe_webhook(
             )
         )
         if not existing:
-            db.add(Enrollment(user_id=payment.user_id, course_id=payment.course_id))
+            course = db.get(Course, payment.course_id)
+            db.add(Enrollment(
+                user_id=payment.user_id,
+                course_id=payment.course_id,
+                expires_at=compute_enrollment_expiry(course) if course else None,
+            ))
         db.commit()
         log.info("enrollment_created_from_payment",
                  target_user_id=str(payment.user_id), course_id=str(payment.course_id))

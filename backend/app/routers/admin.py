@@ -21,7 +21,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from ..db import get_session
-from ..deps import current_admin
+from ..deps import current_admin, compute_enrollment_expiry
 from ..models import (
     User, Course, Lesson, Video, VideoKey, Enrollment, KeyAccessLog, EncodeJob,
 )
@@ -98,7 +98,11 @@ def grant_enrollment(
     )
     if existing:
         return {"id": str(existing.id), "status": "already_enrolled"}
-    enr = Enrollment(user_id=user.id, course_id=course.id)
+    enr = Enrollment(
+        user_id=user.id,
+        course_id=course.id,
+        expires_at=compute_enrollment_expiry(course),
+    )
     db.add(enr); db.commit()
     return {"id": str(enr.id), "status": "created"}
 
@@ -123,6 +127,8 @@ class CourseIn(BaseModel):
     title: str
     description: Optional[str] = None
     price_cents: int = 0
+    # None = lifetime (ขายขาด). Positive int = days of access from enrollment.
+    access_duration_days: Optional[int] = None
 
 
 @router.post("/courses", status_code=201)
@@ -148,6 +154,7 @@ def admin_list_courses(
         {
             "id": str(c.id), "slug": c.slug, "title": c.title,
             "description": c.description, "price_cents": c.price_cents,
+            "access_duration_days": c.access_duration_days,
             "created_at": c.created_at.isoformat(),
         } for c in rows
     ]
@@ -157,6 +164,9 @@ class CoursePatch(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     price_cents: Optional[int] = None
+    # Use Pydantic's explicit-None semantics — caller can clear duration by
+    # passing null to make a course lifetime again.
+    access_duration_days: Optional[int] = None
 
 
 @router.patch("/courses/{slug}")

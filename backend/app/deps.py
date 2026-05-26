@@ -1,3 +1,4 @@
+import datetime as dt
 import jwt as pyjwt
 import structlog
 from fastapi import Depends, HTTPException, Request, status
@@ -72,5 +73,17 @@ def require_enrollment_for_video(video_id: str, user: User, db: Session) -> Less
     )
     if not enrolled:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not enrolled")
+    if enrolled.expires_at is not None and enrolled.expires_at <= dt.datetime.now(dt.timezone.utc):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "enrollment expired")
     return lesson
+
+
+def compute_enrollment_expiry(course) -> "dt.datetime | None":
+    """Return the expires_at for a fresh enrollment, or None for lifetime courses.
+
+    Centralised so every entry point that creates an Enrollment (admin grant,
+    payment webhook, manual slip approval) computes expiry the same way."""
+    if course.access_duration_days is None or course.access_duration_days <= 0:
+        return None
+    return dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=course.access_duration_days)
 

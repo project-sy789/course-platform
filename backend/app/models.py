@@ -30,6 +30,9 @@ class Course(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Time-limited access. NULL = lifetime (ขายขาด). Otherwise enrollments
+    # created for this course expire at created_at + access_duration_days.
+    access_duration_days: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

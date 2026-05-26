@@ -1,3 +1,5 @@
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -14,7 +16,8 @@ def list_courses(db: Session = Depends(get_session)):
     rows = db.scalars(select(Course).order_by(Course.created_at.desc())).all()
     return [
         {"id": str(c.id), "slug": c.slug, "title": c.title,
-         "description": c.description, "price_cents": c.price_cents}
+         "description": c.description, "price_cents": c.price_cents,
+         "access_duration_days": c.access_duration_days}
         for c in rows
     ]
 
@@ -33,6 +36,7 @@ def get_course(slug: str, db: Session = Depends(get_session)):
         "title": course.title,
         "description": course.description,
         "price_cents": course.price_cents,
+        "access_duration_days": course.access_duration_days,
         "lessons": [
             {"id": str(l.id), "title": l.title, "position": l.position, "is_preview": l.is_preview}
             for l in lessons
@@ -59,6 +63,8 @@ def get_lesson(
         )
         if not enrolled:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "not enrolled")
+        if enrolled.expires_at is not None and enrolled.expires_at <= dt.datetime.now(dt.timezone.utc):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "enrollment expired")
 
     return {
         "id": str(lesson.id),
