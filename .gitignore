@@ -1,0 +1,43 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+video.key
+key_info.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# Build
+dist/
+build/
+
+# Docker / runtime
+*.log
+*.pid
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local data
+pgdata/
