@@ -19,7 +19,19 @@ export default function WatermarkOverlay({ userEmail, userId, clientIp }: Props)
     let target = { x: 50, y: 50 };
     let lastJump = 0;
 
-    const text = `${userEmail} • ${userId.slice(0, 8)}${clientIp ? " • " + clientIp : ""}`;
+    const baseText = `${userEmail} • ${userId.slice(0, 8)}${clientIp ? " • " + clientIp : ""}`;
+    let stamp = "";
+    const refreshStamp = () => {
+      // Re-stamp every minute so leaked recordings inline a timestamp
+      // alongside the user identifier — combined with the random-jump
+      // position this lets us tie a leaked clip back to a specific
+      // (account, minute).
+      const d = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    refreshStamp();
+    const stampTimer = window.setInterval(refreshStamp, 60_000);
 
     const fit = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -53,6 +65,7 @@ export default function WatermarkOverlay({ userEmail, userId, clientIp }: Props)
       ctx.lineWidth = 3;
       ctx.strokeStyle = "rgba(0,0,0,0.30)";
       ctx.fillStyle = "rgba(255,255,255,0.30)";
+      const text = `${baseText} • ${stamp}`;
       ctx.strokeText(text, pos.x, pos.y);
       ctx.fillText(text, pos.x, pos.y);
 
@@ -62,6 +75,7 @@ export default function WatermarkOverlay({ userEmail, userId, clientIp }: Props)
 
     return () => {
       cancelAnimationFrame(raf);
+      window.clearInterval(stampTimer);
       ro.disconnect();
     };
   }, [userEmail, userId, clientIp]);

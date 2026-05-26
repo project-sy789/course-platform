@@ -337,3 +337,58 @@ class CreditLedger(Base):
     __table_args__ = (
         Index("idx_credit_ledger_user_time", "user_id", "created_at"),
     )
+
+
+# ---------- Anti-account-sharing: trusted devices ----------
+# When a user logs in from an unrecognised device, the login is held until
+# the user confirms a one-time code emailed to them. After confirmation the
+# (user, device_hash) pair is added here and future logins from the same
+# device skip the OTP step.
+#
+# `device_hash` is the SHA-256 of a client-generated UUID we set in
+# localStorage on first visit (never the user agent — that rotates) plus a
+# salt from settings, so a stolen localStorage value alone isn't enough.
+
+class TrustedDevice(Base):
+    __tablename__ = "trusted_devices"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    device_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str | None] = mapped_column(Text)  # ปกติเป็น UA-summary
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    last_ip: Mapped[str | None] = mapped_column(INET)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "device_hash", name="uq_trusted_device"),
+        Index("idx_trusted_device_user", "user_id"),
+    )
+
+
+class LoginEvent(Base):
+    """Append-only record of every login attempt.
+
+    Powers impossible-travel detection (cheap: compare last successful
+    login's IP /16 + country; if the next login is far away within an hour
+    flag suspicious) and gives admin a clear forensic trail."""
+    __tablename__ = "login_events"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    email_attempted: Mapped[str] = mapped_column(Text, nullable=False)
+    ip: Mapped[str | None] = mapped_column(INET)
+    user_agent: Mapped[str | None] = mapped_column(Text)
+    device_hash: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False)  # ok|otp_required|bad_pw|locked
+    suspicious: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suspicion_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_login_events_user_time", "user_id", "created_at"),
+    )

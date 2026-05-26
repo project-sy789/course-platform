@@ -66,3 +66,27 @@ def render_password_reset_email(reset_url: str) -> tuple[str, str]:
         'หากไม่ใช่คุณ กรุณาเพิกเฉยข้อความนี้</p>'
     )
     return text, html
+
+
+def render_device_otp_email(code: str, ip: str | None, ua: str | None) -> tuple[str, str]:
+    """OTP for confirming a login from a new/suspicious device.
+
+    Includes IP + UA tail so a real owner sees "huh, that's not me" and
+    can ignore the code (the challenge expires in 10 min anyway)."""
+    ua_tail = (ua or "")[:80]
+    text = (
+        "มีการเข้าสู่ระบบจากอุปกรณ์ใหม่\n\n"
+        f"รหัสยืนยัน 6 หลัก: {code}\n"
+        "ใช้ภายใน 10 นาที\n\n"
+        f"IP: {ip or '-'}\n"
+        f"อุปกรณ์: {ua_tail or '-'}\n\n"
+        "หากไม่ใช่คุณ กรุณาเปลี่ยนรหัสผ่านทันที\n"
+    )
+    html = (
+        '<p>มีการเข้าสู่ระบบจากอุปกรณ์ใหม่</p>'
+        f'<p style="font-size:24px; letter-spacing:6px"><strong>{code}</strong></p>'
+        '<p style="color:#888">ใช้ภายใน 10 นาที</p>'
+        f'<p style="color:#888">IP: {ip or "-"}<br>อุปกรณ์: {ua_tail or "-"}</p>'
+        '<p style="color:#c00">หากไม่ใช่คุณ กรุณาเปลี่ยนรหัสผ่านทันที</p>'
+    )
+    return text, html

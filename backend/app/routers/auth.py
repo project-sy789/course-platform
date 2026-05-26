@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import json
 import secrets
 from urllib.parse import urlencode
 
@@ -14,7 +15,13 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_redis, get_session
 from ..deps import current_user
+from ..antisharing import (
+    check_impossible_travel, consume_otp_challenge, generate_otp_code,
+    hash_device_id, is_trusted_device, log_login_event,
+    record_successful_login, stash_otp_challenge, trust_device,
+)
 from ..email import (
+    render_device_otp_email,
     render_password_reset_email,
     render_verification_email,
     send_email,
@@ -130,12 +137,80 @@ def verify_email(token: str, db: Session = Depends(get_session)):
 
 
 @router.post("/login")
-def login(body: Credentials, response: Response, db: Session = Depends(get_session)):
+async def login(
+    body: Credentials,
+    request: Request,
+    response: Response,
+    bg: BackgroundTasks,
+    db: Session = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+):
     user = db.scalar(select(User).where(User.email == body.email))
+    ip = _client_ip(request)
+    ua = request.headers.get("user-agent", "")
+    raw_device_id = request.headers.get("x-device-id", "")
+    device_hash = hash_device_id(raw_device_id) if raw_device_id else None
+
     if not user or not user.is_active or not verify_password(body.password, user.password_hash):
+        log_login_event(db, user=user, email=body.email, ip=ip, ua=ua,
+                        device_hash=device_hash, status="bad_pw")
+        db.commit()
         raise HTTPException(401, "bad credentials")
     if not user.email_verified:
+        log_login_event(db, user=user, email=body.email, ip=ip, ua=ua,
+                        device_hash=device_hash, status="unverified")
+        db.commit()
         raise HTTPException(403, "email not verified")
+
+    # Decide whether to short-circuit to OTP.
+    require_otp = False
+    suspicion_reason = None
+    if settings.ANTI_SHARING_ENABLED:
+        # No fingerprint header at all → treat as new device.
+        if device_hash is None:
+            require_otp = True
+            suspicion_reason = "no device fingerprint"
+        elif not is_trusted_device(db, user.id, device_hash):
+            require_otp = True
+            suspicion_reason = "new device"
+        else:
+            travel = await check_impossible_travel(redis, user.id, ip)
+            if travel:
+                require_otp = True
+                suspicion_reason = travel
+
+    if require_otp:
+        code = generate_otp_code()
+        challenge_token = await stash_otp_challenge(
+            redis,
+            user_id=user.id,
+            device_hash=device_hash or "",
+            ip=ip, ua=ua, code=code,
+        )
+        text, html = render_device_otp_email(code, ip, ua)
+        bg.add_task(send_email, body.email, "รหัสยืนยันการเข้าสู่ระบบ", text, html)
+        log_login_event(
+            db, user=user, email=body.email, ip=ip, ua=ua,
+            device_hash=device_hash, status="otp_required",
+            suspicious=True, suspicion_reason=suspicion_reason,
+        )
+        db.commit()
+        return Response(
+            content=json.dumps({
+                "otp_required": True,
+                "challenge_token": challenge_token,
+            }),
+            media_type="application/json",
+            status_code=202,
+        )
+
+    # Fast path: trusted device, no travel anomaly. Mint session immediately.
+    if device_hash:
+        trust_device(db, user_id=user.id, device_hash=device_hash, label=ua[:80], ip=ip)
+    log_login_event(db, user=user, email=body.email, ip=ip, ua=ua,
+                    device_hash=device_hash, status="ok")
+    db.commit()
+    await record_successful_login(redis, user.id, ip)
     token = create_jwt(str(user.id))
     response.set_cookie(
         "session", token,
@@ -143,6 +218,58 @@ def login(body: Credentials, response: Response, db: Session = Depends(get_sessi
         max_age=settings.JWT_TTL_MIN * 60, path="/",
     )
     return {"ok": True, "token": token}
+
+
+class OtpConfirm(BaseModel):
+    challenge_token: str
+    code: str
+
+
+@router.post("/device-otp/confirm")
+async def confirm_device_otp(
+    body: OtpConfirm,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+):
+    """Verify the emailed OTP, promote the device to trusted, mint session."""
+    payload = await consume_otp_challenge(
+        redis, challenge_token=body.challenge_token, code=body.code,
+    )
+    if not payload:
+        raise HTTPException(400, "invalid or expired code")
+    user = db.get(User, payload["user_id"])
+    if not user or not user.is_active:
+        raise HTTPException(401, "user gone")
+
+    ua = request.headers.get("user-agent", "")
+    ip = _client_ip(request)
+    if payload.get("device_hash"):
+        trust_device(
+            db, user_id=user.id, device_hash=payload["device_hash"],
+            label=ua[:80], ip=ip,
+        )
+    log_login_event(db, user=user, email=user.email, ip=ip, ua=ua,
+                    device_hash=payload.get("device_hash"), status="ok")
+    db.commit()
+    await record_successful_login(redis, user.id, ip)
+
+    token = create_jwt(str(user.id))
+    response.set_cookie(
+        "session", token,
+        httponly=True, secure=True, samesite="strict",
+        max_age=settings.JWT_TTL_MIN * 60, path="/",
+    )
+    return {"ok": True, "token": token}
+
+
+def _client_ip(request: Request) -> str | None:
+    # Caddy already strips X-Forwarded-For from outside; trust the last hop.
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[-1].strip()
+    return request.client.host if request.client else None
 
 
 @router.post("/logout")

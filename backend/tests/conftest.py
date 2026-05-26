@@ -22,6 +22,11 @@ os.environ.setdefault("JWT_SECRET", secrets.token_hex(32))
 os.environ.setdefault("KEK_BASE64", base64.b64encode(secrets.token_bytes(32)).decode())
 os.environ.setdefault("R2_PUBLIC_BASE", "https://media.test.example.com")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
+# Anti-sharing forces OTP on every login. Most fixture-based tests inject
+# auth via auth_cookie() and never touch /login, so we default it off here.
+# Dedicated tests in test_anti_sharing.py flip settings.ANTI_SHARING_ENABLED
+# back on at runtime to exercise the OTP path.
+os.environ.setdefault("ANTI_SHARING_ENABLED", "false")
 
 if "TEST_DATABASE_URL" in os.environ:
     os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]

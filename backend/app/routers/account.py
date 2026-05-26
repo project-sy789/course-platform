@@ -79,6 +79,44 @@ def update_tax_info(
     return TaxInfoOut(**body.model_dump())
 
 
+# ---------- Trusted devices (anti-account-sharing) ----------
+
+@router.get("/devices")
+def list_devices(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_session),
+):
+    from ..models import TrustedDevice
+    rows = db.scalars(
+        select(TrustedDevice)
+        .where(TrustedDevice.user_id == user.id)
+        .order_by(TrustedDevice.last_seen_at.desc())
+    ).all()
+    return [
+        {
+            "id": str(r.id),
+            "label": r.label or "(unnamed)",
+            "last_seen_at": r.last_seen_at.isoformat(),
+            "last_ip": str(r.last_ip) if r.last_ip else None,
+            "created_at": r.created_at.isoformat(),
+        } for r in rows
+    ]
+
+
+@router.delete("/devices/{device_id}")
+def revoke_device(
+    device_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_session),
+):
+    from ..models import TrustedDevice
+    td = db.get(TrustedDevice, device_id)
+    if not td or td.user_id != user.id:
+        raise HTTPException(404, "not found")
+    db.delete(td); db.commit()
+    return {"ok": True}
+
+
 @router.get("/export")
 def export_my_data(
     user: User = Depends(current_user),

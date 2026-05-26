@@ -66,6 +66,15 @@ class Settings(BaseSettings):
     # Prefix for the sequential invoice number, e.g. "INV2026" → "INV2026-000123".
     INVOICE_NUMBER_PREFIX: str = "INV"
 
+    # Anti-account-sharing.
+    # When enabled, login from an unrecognised device is held until the user
+    # confirms a code emailed to them. Set the salt to a random secret —
+    # rotating it invalidates all trust state and forces re-OTP everywhere.
+    ANTI_SHARING_ENABLED: bool = True
+    DEVICE_FINGERPRINT_SALT: str = "change-me-anti-sharing-salt"
+    DEVICE_OTP_TTL_SEC: int = 600        # how long the emailed code is valid
+    IMPOSSIBLE_TRAVEL_TTL_SEC: int = 3600  # window for IP-jump suspicion
+
     CORS_ORIGINS: str = "https://app.example.com"
 
     # End-to-end test bypass. Set ONLY in dev/CI; it exposes a route to
