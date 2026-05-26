@@ -146,3 +146,28 @@ class Payment(Base):
     )
 
     __table_args__ = (Index("idx_payments_user_course", "user_id", "course_id"),)
+
+
+class EncodeJob(Base):
+    """Tracks a background ffmpeg encode of a raw upload into multi-bitrate HLS.
+
+    State machine: pending -> running -> done | failed
+    The arq worker picks up rows in 'pending', flips to 'running', shells out to
+    encode_multibitrate.sh, then uploads the result and flips to 'done'.
+    """
+    __tablename__ = "encode_jobs"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    upload_id: Mapped[str] = mapped_column(Text, nullable=False)
+    course_slug: Mapped[str] = mapped_column(Text, nullable=False)
+    lesson_title: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    is_preview: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    error: Mapped[str | None] = mapped_column(Text)
+    video_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (Index("idx_encode_jobs_status", "status"),)

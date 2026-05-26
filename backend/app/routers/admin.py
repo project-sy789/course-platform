@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from ..db import get_session
 from ..deps import current_admin
 from ..models import (
-    User, Course, Lesson, Video, VideoKey, Enrollment, KeyAccessLog,
+    User, Course, Lesson, Video, VideoKey, Enrollment, KeyAccessLog, EncodeJob,
 )
 from ..crypto import encrypt_video_key
 from ..r2 import upload_bytes
@@ -262,6 +262,75 @@ def finalize_upload(
         "lesson_id": str(lesson.id),
         "manifest_url": f"{settings.R2_PUBLIC_BASE}/{manifest_key}",
     }
+
+
+# ---------- Background encode jobs ----------
+# Admin uploads ONE raw source via /uploads/{id}/file, then POSTs here. The arq
+# worker picks it up, runs encode_multibitrate.sh, uploads the ladder to R2,
+# and creates the Video/Lesson/VideoKey rows.
+
+class EnqueueEncode(BaseModel):
+    upload_id: str
+    course_slug: str
+    lesson_title: str
+    lesson_position: int = 1
+    is_preview: bool = False
+
+
+@router.post("/encode-jobs", status_code=202)
+async def enqueue_encode(
+    body: EnqueueEncode,
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    upload_dir = os.path.join(_BUFFER_ROOT, body.upload_id)
+    if not os.path.isdir(upload_dir):
+        raise HTTPException(404, "upload not found")
+    if not db.scalar(select(Course).where(Course.slug == body.course_slug)):
+        raise HTTPException(404, "course not found — create it first")
+
+    job = EncodeJob(
+        upload_id=body.upload_id,
+        course_slug=body.course_slug,
+        lesson_title=body.lesson_title,
+        position=body.lesson_position,
+        is_preview=body.is_preview,
+    )
+    db.add(job); db.commit(); db.refresh(job)
+
+    from arq import create_pool
+    from arq.connections import RedisSettings
+    pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+    try:
+        await pool.enqueue_job("encode_video", str(job.id))
+    finally:
+        await pool.close()
+
+    return {"job_id": str(job.id), "status": job.status}
+
+
+@router.get("/encode-jobs")
+def list_encode_jobs(
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+    limit: int = 50,
+):
+    rows = db.scalars(
+        select(EncodeJob).order_by(EncodeJob.created_at.desc()).limit(limit)
+    ).all()
+    return [
+        {
+            "id": str(r.id),
+            "upload_id": r.upload_id,
+            "course_slug": r.course_slug,
+            "lesson_title": r.lesson_title,
+            "status": r.status,
+            "error": r.error,
+            "video_id": str(r.video_id) if r.video_id else None,
+            "created_at": r.created_at.isoformat(),
+            "updated_at": r.updated_at.isoformat(),
+        } for r in rows
+    ]
 
 
 # ---------- Key access logs ----------

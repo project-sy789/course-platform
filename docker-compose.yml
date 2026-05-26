@@ -35,11 +35,28 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    volumes:
+      - upload_buffer:/tmp/course-uploads
     labels:
       # Daily cold backup at 03:17 UTC (offset to avoid the global :00 hammer)
       ofelia.enabled: "true"
       ofelia.job-exec.backup.schedule: "17 17 3 * * *"
       ofelia.job-exec.backup.command: "python -m scripts.backup_to_glacier"
+
+  worker:
+    build: ./backend
+    env_file: .env
+    # Override entrypoint: workers don't run alembic (the api does that on boot).
+    entrypoint: []
+    command: ["arq", "app.worker.WorkerSettings"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - upload_buffer:/tmp/course-uploads
+    restart: unless-stopped
 
   ofelia:
     image: mcuadros/ofelia:0.3.13
@@ -124,3 +141,4 @@ volumes:
   prometheus_data: {}
   grafana_data: {}
   loki_data: {}
+  upload_buffer: {}
