@@ -1,4 +1,5 @@
 import jwt as pyjwt
+import structlog
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -24,6 +25,9 @@ def current_user(request: Request, db: Session = Depends(get_session)) -> User:
     )
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "user not found")
+    # Bind user_id into the request log context so every subsequent log line
+    # carries it without manual plumbing.
+    structlog.contextvars.bind_contextvars(user_id=str(user.id))
     return user
 
 

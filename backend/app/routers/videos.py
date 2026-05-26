@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 
 from ..db import get_session, get_redis
 from ..deps import current_user, require_enrollment_for_video
+from ..logging import log
 from ..models import User, Video, VideoKey, KeyAccessLog
 from ..crypto import decrypt_video_key
 from ..config import settings
@@ -66,6 +67,14 @@ async def get_video_key(
     ip, ua_hash = _client_ctx(request)
 
     def _log(user_id: str | None, granted: bool, reason: str):
+        # Structured log line — picked up by Loki for alerting / forensics.
+        log.info(
+            "key_access",
+            granted=granted,
+            reason=reason,
+            video_id=str(video_id),
+            target_user_id=user_id,
+        )
         try:
             db.add(KeyAccessLog(
                 user_id=user_id,
