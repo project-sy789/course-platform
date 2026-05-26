@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
-import { formatTHB } from "@/lib/format";
+import { formatTHB, formatThaiDateTime } from "@/lib/format";
 
 type Slip = {
   id: string;
@@ -99,7 +99,7 @@ export default function AdminSlipsPage() {
                 <p className="font-semibold whitespace-nowrap">{formatTHB(s.amount_cents)}</p>
               </div>
               <p className="opacity-60 text-xs">
-                ยื่นเมื่อ {new Date(s.created_at).toLocaleString("th-TH")}
+                ยื่นเมื่อ {formatThaiDateTime(s.created_at)}
                 {s.slip_ref && <> · อ้างอิงสลิป {s.slip_ref}</>}
               </p>
               <p className="text-xs">

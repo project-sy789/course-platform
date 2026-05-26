@@ -19,10 +19,34 @@ const DATE = new Intl.DateTimeFormat("th-TH", {
   year: "numeric",
   month: "short",
   day: "numeric",
+  calendar: "buddhist",
 });
 
 export function formatThaiDate(iso: string | Date): string {
   return DATE.format(typeof iso === "string" ? new Date(iso) : iso);
+}
+
+// Buddhist Era datetime — "27 พ.ค. 2569 14:08" style.
+// Intl with calendar: 'buddhist' renders the BE year + Thai month names;
+// on browsers where the default differs (rare) this guarantees BE.
+const DATETIME = new Intl.DateTimeFormat("th-TH", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  calendar: "buddhist",
+});
+
+export function formatThaiDateTime(iso: string | Date): string {
+  return DATETIME.format(typeof iso === "string" ? new Date(iso) : iso);
+}
+
+// Thai-numerals integer formatter for counters/stats. Keeps the language
+// consistent across the admin dashboard.
+const NUM = new Intl.NumberFormat("th-TH");
+export function formatNumber(n: number): string {
+  return NUM.format(n);
 }
 
 export function formatBytes(n: number): string {

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { adminApi, type LogRow } from "@/lib/admin";
+import { formatThaiDateTime } from "@/lib/format";
 
 export default function AdminLogsPage() {
   const [logs, setLogs] = useState<LogRow[]>([]);
@@ -28,7 +29,7 @@ export default function AdminLogsPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-6">Key access logs</h1>
+      <h1 className="text-xl font-semibold mb-6">บันทึกการเข้าถึงคีย์</h1>
 
       <div className="flex flex-wrap gap-3 mb-4">
         <select
@@ -36,9 +37,9 @@ export default function AdminLogsPage() {
           onChange={(e) => setFilter({ ...filter, granted: e.target.value as any })}
           className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm"
         >
-          <option value="">All outcomes</option>
-          <option value="true">Granted only</option>
-          <option value="false">Denied only</option>
+          <option value="">ทั้งหมด</option>
+          <option value="true">อนุมัติเท่านั้น</option>
+          <option value="false">ปฏิเสธเท่านั้น</option>
         </select>
         <input
           placeholder="user_id" value={filter.user_id}
@@ -51,22 +52,22 @@ export default function AdminLogsPage() {
           className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm font-mono"
         />
         <button onClick={load} className="rounded bg-white text-black font-medium px-4 text-sm">
-          Apply
+          ค้นหา
         </button>
       </div>
 
-      {error && <p className="text-sm text-red-400 mb-3">Error: {error}</p>}
+      {error && <p className="text-sm text-red-400 mb-3">เกิดข้อผิดพลาด: {error}</p>}
 
       <div className="rounded-xl border border-neutral-800 overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-neutral-900 text-left">
             <tr>
-              <th className="p-2">Time</th>
-              <th className="p-2">Outcome</th>
-              <th className="p-2">User</th>
-              <th className="p-2">Video</th>
+              <th className="p-2">เวลา</th>
+              <th className="p-2">ผล</th>
+              <th className="p-2">ผู้ใช้</th>
+              <th className="p-2">วิดีโอ</th>
               <th className="p-2">IP</th>
-              <th className="p-2">Reason</th>
+              <th className="p-2">เหตุผล</th>
               <th className="p-2">UA</th>
             </tr>
           </thead>
@@ -74,13 +75,13 @@ export default function AdminLogsPage() {
             {logs.map((r) => (
               <tr key={r.id} className="border-t border-neutral-800">
                 <td className="p-2 whitespace-nowrap opacity-70">
-                  {new Date(r.created_at).toLocaleString()}
+                  {formatThaiDateTime(r.created_at)}
                 </td>
                 <td className="p-2">
                   {r.granted ? (
-                    <span className="text-emerald-400">grant</span>
+                    <span className="text-emerald-400">อนุมัติ</span>
                   ) : (
-                    <span className="text-red-400">deny</span>
+                    <span className="text-red-400">ปฏิเสธ</span>
                   )}
                 </td>
                 <td className="p-2 font-mono">{r.user_id?.slice(0, 8) ?? "—"}</td>
@@ -93,16 +94,16 @@ export default function AdminLogsPage() {
               </tr>
             ))}
             {logs.length === 0 && (
-              <tr><td colSpan={7} className="p-3 opacity-50 text-center">No logs match filters</td></tr>
+              <tr><td colSpan={7} className="p-3 opacity-50 text-center">ไม่มีรายการ</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
       <p className="mt-4 text-xs opacity-60">
-        Patterns to watch: same user_id grants from many IPs (account sharing),
-        many denials from one IP (scraping / token replay), spike of grants for one
-        video_id outside normal hours.
+        จุดที่ควรเฝ้าระวัง: user_id เดียวได้รับคีย์จาก IP จำนวนมาก (ใช้บัญชีร่วมกัน)
+        การปฏิเสธจำนวนมากจาก IP เดียว (สแครป / ใช้ token ซ้ำ)
+        การเพิ่มขึ้นผิดปกติของการอนุมัติคีย์วิดีโอใดวิดีโอหนึ่งนอกเวลาทำการ
       </p>
     </div>
   );

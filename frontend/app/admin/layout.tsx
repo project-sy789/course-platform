@@ -5,12 +5,13 @@ import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 
 const NAV = [
-  { href: "/admin", label: "Dashboard" },
-  { href: "/admin/courses", label: "Courses" },
-  { href: "/admin/upload", label: "Upload video" },
-  { href: "/admin/users", label: "Users" },
-  { href: "/admin/logs", label: "Access logs" },
-  { href: "/admin/settings", label: "Settings" },
+  { href: "/admin", label: "แดชบอร์ด" },
+  { href: "/admin/courses", label: "คอร์ส" },
+  { href: "/admin/upload", label: "อัปโหลดวิดีโอ" },
+  { href: "/admin/users", label: "ผู้ใช้" },
+  { href: "/admin/slip-uploads", label: "ตรวจสลิป" },
+  { href: "/admin/logs", label: "บันทึกการเข้าถึง" },
+  { href: "/admin/settings", label: "ตั้งค่า" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -38,12 +39,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       });
   }, [router]);
 
-  if (!ready) return <div className="p-8 opacity-60">Checking admin access…</div>;
+  if (!ready) return <div className="p-8 opacity-60">กำลังตรวจสอบสิทธิ์ผู้ดูแลระบบ…</div>;
 
   return (
     <div className="min-h-screen flex">
       <aside className="w-56 bg-neutral-900 border-r border-neutral-800 p-4">
-        <h2 className="font-semibold mb-4">Admin</h2>
+        <h2 className="font-semibold mb-4">ผู้ดูแลระบบ</h2>
         <nav className="flex flex-col gap-1">
           {NAV.map((n) => (
             <Link
@@ -57,7 +58,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </Link>
           ))}
         </nav>
-        <Link href="/" className="block mt-6 text-xs underline opacity-60">← Back to site</Link>
+        <Link href="/" className="block mt-6 text-xs underline opacity-60">← กลับสู่หน้าเว็บ</Link>
       </aside>
       <main className="flex-1 p-8">{children}</main>
     </div>

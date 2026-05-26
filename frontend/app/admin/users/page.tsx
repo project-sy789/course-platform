@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { adminApi, type AdminUser } from "@/lib/admin";
+import { formatThaiDate } from "@/lib/format";
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -25,33 +26,33 @@ export default function AdminUsersPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-6">Users & enrollments</h1>
+      <h1 className="text-xl font-semibold mb-6">ผู้ใช้และการลงทะเบียน</h1>
 
       <form onSubmit={submit} className="rounded-xl border border-neutral-800 p-4 mb-8 grid gap-3 max-w-xl">
-        <h2 className="font-medium">Grant enrollment</h2>
+        <h2 className="font-medium">เพิ่มสิทธิ์เรียนให้ผู้ใช้</h2>
         <input
-          required type="email" placeholder="user email" value={grant.user_email}
+          required type="email" placeholder="อีเมลผู้ใช้" value={grant.user_email}
           onChange={(e) => setGrant({ ...grant, user_email: e.target.value })}
           className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
         />
         <input
-          required placeholder="course slug" value={grant.course_slug}
+          required placeholder="slug ของคอร์ส" value={grant.course_slug}
           onChange={(e) => setGrant({ ...grant, course_slug: e.target.value })}
           className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
         />
         {msg && <p className="text-sm text-emerald-400">{msg}</p>}
         {error && <p className="text-sm text-red-400">{error}</p>}
-        <button className="rounded bg-white text-black font-medium py-2">Grant access</button>
+        <button className="rounded bg-white text-black font-medium py-2">เปิดสิทธิ์</button>
       </form>
 
       <div className="rounded-xl border border-neutral-800 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-neutral-900">
             <tr className="text-left">
-              <th className="p-3">Email</th>
-              <th className="p-3">Role</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Joined</th>
+              <th className="p-3">อีเมล</th>
+              <th className="p-3">บทบาท</th>
+              <th className="p-3">สถานะ</th>
+              <th className="p-3">วันที่สมัคร</th>
             </tr>
           </thead>
           <tbody>
@@ -59,16 +60,16 @@ export default function AdminUsersPage() {
               <tr key={u.id} className="border-t border-neutral-800">
                 <td className="p-3">{u.email}</td>
                 <td className="p-3">
-                  {u.is_admin ? <span className="text-yellow-400">admin</span> : "user"}
+                  {u.is_admin ? <span className="text-yellow-400">ผู้ดูแล</span> : "ผู้ใช้"}
                 </td>
                 <td className="p-3">
-                  {u.is_active ? "active" : <span className="text-red-400">disabled</span>}
+                  {u.is_active ? "ใช้งานอยู่" : <span className="text-red-400">ระงับ</span>}
                 </td>
-                <td className="p-3 opacity-60">{new Date(u.created_at).toLocaleDateString()}</td>
+                <td className="p-3 opacity-60">{formatThaiDate(u.created_at)}</td>
               </tr>
             ))}
             {users.length === 0 && (
-              <tr><td colSpan={4} className="p-3 opacity-50 text-center">No users yet</td></tr>
+              <tr><td colSpan={4} className="p-3 opacity-50 text-center">ยังไม่มีผู้ใช้</td></tr>
             )}
           </tbody>
         </table>
