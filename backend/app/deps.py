@@ -27,6 +27,12 @@ def current_user(request: Request, db: Session = Depends(get_session)) -> User:
     return user
 
 
+def current_admin(user: User = Depends(current_user)) -> User:
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+    return user
+
+
 def require_enrollment_for_video(video_id: str, user: User, db: Session) -> Lesson:
     lesson = db.scalar(select(Lesson).where(Lesson.video_id == video_id))
     if not lesson:

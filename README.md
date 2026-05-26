@@ -12,7 +12,8 @@ Decoupled architecture: encrypted HLS on Cloudflare R2, key delivery + auth on H
 ```
 course-platform/
 ├── backend/        FastAPI service
-├── frontend/       Next.js app
+├── frontend/       Next.js app (incl. /admin)
+├── monitoring/     Prometheus + Grafana provisioning
 ├── docker-compose.yml
 ├── Caddyfile
 └── .env.example
@@ -22,7 +23,7 @@ course-platform/
 
 ```bash
 cp .env.example .env
-# fill secrets — at minimum: JWT_SECRET, KEK_BASE64, DB_PASSWORD
+# fill secrets — at minimum: JWT_SECRET, KEK_BASE64, DB_PASSWORD, GRAFANA_PASSWORD
 # generate them:
 #   openssl rand -hex 64           # JWT_SECRET
 #   openssl rand -base64 32        # KEK_BASE64
@@ -36,6 +37,22 @@ cp .env.example .env.local
 npm install
 npm run dev
 ```
+
+## Promoting an admin user
+
+```bash
+# Register a user via the UI first, then:
+docker compose exec api python -m scripts.make_admin you@example.com
+# Sign in again, navigate to /admin
+```
+
+## Monitoring (Prometheus + Grafana)
+
+- API exposes `/metrics` (FastAPI request rate, latency, status codes)
+- Prometheus scrapes `api:8000/metrics` every 15s
+- Grafana auto-provisions a "Course Platform — API" dashboard at first boot
+- Login: `admin` / `${GRAFANA_PASSWORD}` from `.env`
+- In production, expose Grafana behind a separate subdomain (`grafana.example.com` in `Caddyfile`) and IP-allowlist it
 
 ## Production deploy (Hetzner)
 

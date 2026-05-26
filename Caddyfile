@@ -7,8 +7,23 @@ api.example.com {
     Permissions-Policy "camera=(), microphone=(), geolocation=()"
     -Server
   }
+  # /metrics is for Prometheus scraping inside the docker network only.
+  @metrics path /metrics
+  respond @metrics 404
+
   reverse_proxy api:8000 {
     header_up X-Real-IP {remote_host}
     header_up X-Forwarded-For {remote_host}
   }
+}
+
+# Grafana — IP-allowlist this in production. Replace example.com with your domain.
+grafana.example.com {
+  encode zstd gzip
+  header {
+    Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    -Server
+  }
+  reverse_proxy grafana:3000
 }
