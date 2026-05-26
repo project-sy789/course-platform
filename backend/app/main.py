@@ -1,13 +1,17 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
+from redis.asyncio import Redis
 
 from .config import settings
+from .db import get_session, get_redis
 from .routers import auth as auth_router
 from .routers import videos as videos_router
 from .routers import lessons as lessons_router
@@ -41,10 +45,36 @@ app.include_router(admin_router.router)
 
 # Expose /metrics for Prometheus. Excluded paths keep noise out of dashboards.
 Instrumentator(
-    excluded_handlers=["/healthz", "/metrics"],
+    excluded_handlers=["/healthz", "/healthz/ready", "/metrics"],
 ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.get("/healthz")
 def health():
+    """Liveness — process is up. Used by container orchestrators."""
     return {"ok": True}
+
+
+@app.get("/healthz/ready")
+async def ready(
+    db: Session = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+):
+    """Readiness — DB and Redis are reachable. Used by load balancers."""
+    checks: dict[str, str] = {}
+    status_code = 200
+    try:
+        db.execute(text("SELECT 1"))
+        checks["db"] = "ok"
+    except Exception as e:
+        checks["db"] = f"fail: {type(e).__name__}"
+        status_code = 503
+    try:
+        pong = await redis.ping()
+        checks["redis"] = "ok" if pong else "fail"
+        if not pong:
+            status_code = 503
+    except Exception as e:
+        checks["redis"] = f"fail: {type(e).__name__}"
+        status_code = 503
+    return JSONResponse({"checks": checks}, status_code=status_code)

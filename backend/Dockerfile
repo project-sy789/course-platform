@@ -10,7 +10,8 @@ COPY app ./app
 COPY scripts ./scripts
 COPY alembic.ini ./
 COPY alembic ./alembic
-RUN useradd -m app && chown -R app /app
+COPY entrypoint.sh ./
+RUN chmod +x ./entrypoint.sh && useradd -m app && chown -R app /app
 USER app
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["./entrypoint.sh"]
