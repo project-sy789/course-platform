@@ -38,6 +38,28 @@ npm install
 npm run dev
 ```
 
+## Running tests
+
+The key delivery endpoint is the most security-critical surface in the system.
+A green test run is a precondition for deploy.
+
+```bash
+./scripts/run_tests.sh           # full suite
+./scripts/run_tests.sh -k key    # just /key endpoint tests
+```
+
+Tests run inside the api container against a dedicated `course_test` database
+that is dropped + recreated each invocation. Redis is replaced with `fakeredis`
+in-process so tests don't share state.
+
+Covered:
+- Every auth/enrollment path of `/api/v1/videos/{id}/playback-session` and `/key`
+- IP and User-Agent mismatch (token replay) rejection
+- Inactive user rejection between session creation and key fetch
+- That every attempt — granted or denied — is written to `key_access_log`
+- Auth flow (register / login / inactive user / duplicate email / weak password)
+- Liveness + readiness health checks
+
 ## Promoting an admin user
 
 ```bash
