@@ -138,6 +138,63 @@ def create_course(
     return {"id": str(c.id)}
 
 
+@router.get("/courses")
+def admin_list_courses(
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    rows = db.scalars(select(Course).order_by(Course.created_at.desc())).all()
+    return [
+        {
+            "id": str(c.id), "slug": c.slug, "title": c.title,
+            "description": c.description, "price_cents": c.price_cents,
+            "created_at": c.created_at.isoformat(),
+        } for c in rows
+    ]
+
+
+class CoursePatch(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    price_cents: Optional[int] = None
+
+
+@router.patch("/courses/{slug}")
+def update_course(
+    slug: str,
+    body: CoursePatch,
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    course = db.scalar(select(Course).where(Course.slug == slug))
+    if not course:
+        raise HTTPException(404, "not found")
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(course, k, v)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/courses/{slug}")
+def delete_course(
+    slug: str,
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    course = db.scalar(select(Course).where(Course.slug == slug))
+    if not course:
+        raise HTTPException(404, "not found")
+    # Refuse if anyone is enrolled — force admin to revoke first, otherwise
+    # you silently destroy paid access.
+    enr_count = db.scalar(
+        select(func.count()).select_from(Enrollment).where(Enrollment.course_id == course.id)
+    ) or 0
+    if enr_count > 0:
+        raise HTTPException(409, f"course has {enr_count} active enrollments — revoke first")
+    db.delete(course); db.commit()
+    return {"ok": True}
+
+
 # ---------- Video upload ----------
 # Files are buffered in /tmp under a per-upload UUID, then flushed to R2 on finalize.
 # This keeps the API stateless from the client's perspective.

@@ -5,13 +5,14 @@ import hashlib
 import secrets
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr
+from redis.asyncio import Redis
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..db import get_session
+from ..db import get_redis, get_session
 from ..deps import current_user
 from ..email import (
     render_password_reset_email,
@@ -20,7 +21,7 @@ from ..email import (
 )
 from ..logging import log
 from ..models import EmailToken, User
-from ..auth import create_jwt, hash_password, verify_password
+from ..auth import create_jwt, decode_jwt, hash_password, jwt_remaining_seconds, verify_password
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -145,8 +146,55 @@ def login(body: Credentials, response: Response, db: Session = Depends(get_sessi
 
 
 @router.post("/logout")
-def logout(response: Response):
+async def logout(
+    request: Request,
+    response: Response,
+    redis: Redis = Depends(get_redis),
+):
+    """Revoke this token (jti added to denylist) and clear the cookie.
+
+    Stateless JWT can't be un-signed, so we keep a tiny per-jti deny entry
+    in Redis that lives only as long as the token itself. After natural
+    expiry the entry is gone — no unbounded growth.
+    """
+    token = request.cookies.get("session")
+    if not token:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+    if token:
+        try:
+            payload = decode_jwt(token)
+            jti = payload.get("jti")
+            ttl = jwt_remaining_seconds(payload)
+            if jti and ttl > 0:
+                await redis.set(f"jwt:revoked:{jti}", "1", ex=ttl)
+        except Exception:
+            pass  # malformed token; cookie clear below is still safe
     response.delete_cookie("session", path="/")
+    return {"ok": True}
+
+
+@router.post("/logout-all")
+async def logout_all(
+    user: User = Depends(current_user),
+    redis: Redis = Depends(get_redis),
+    response: Response = None,
+):
+    """Revoke every token issued before now for this user. Use after a
+    suspected compromise or when the user changes their password.
+
+    Implementation: store `now` as a cutoff; subsequent token verification
+    rejects any JWT whose `iat` is <= cutoff. Lives for one full token TTL.
+    """
+    cutoff = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    await redis.set(
+        f"jwt:user_revoke:{user.id}", str(cutoff),
+        ex=settings.JWT_TTL_MIN * 60,
+    )
+    if response is not None:
+        response.delete_cookie("session", path="/")
+    log.info("logout_all", target_user_id=str(user.id))
     return {"ok": True}
 
 
@@ -167,7 +215,11 @@ async def request_password_reset(
 
 
 @router.post("/reset-password")
-def reset_password(body: TokenAndPassword, db: Session = Depends(get_session)):
+async def reset_password(
+    body: TokenAndPassword,
+    db: Session = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+):
     if len(body.new_password) < 8:
         raise HTTPException(422, "password too short")
     row = _consume_token(db, body.token, "reset")
@@ -179,6 +231,13 @@ def reset_password(body: TokenAndPassword, db: Session = Depends(get_session)):
         )
     )
     db.commit()
+    # Invalidate every existing session for this user — a leaked token
+    # shouldn't survive a password change.
+    cutoff = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    await redis.set(
+        f"jwt:user_revoke:{row.user_id}", str(cutoff),
+        ex=settings.JWT_TTL_MIN * 60,
+    )
     log.info("password_reset", target_user_id=str(row.user_id))
     return {"ok": True}
 
