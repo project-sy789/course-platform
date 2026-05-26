@@ -19,6 +19,7 @@ from .routers import videos as videos_router
 from .routers import lessons as lessons_router
 from .routers import admin as admin_router
 from .routers import payments as payments_router
+from .routers import materials as materials_router
 
 configure_logging()
 
@@ -49,6 +50,7 @@ app.include_router(videos_router.router)
 app.include_router(lessons_router.router)
 app.include_router(admin_router.router)
 app.include_router(payments_router.router)
+app.include_router(materials_router.router)
 
 # Expose /metrics for Prometheus. Excluded paths keep noise out of dashboards.
 Instrumentator(

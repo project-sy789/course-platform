@@ -171,3 +171,47 @@ class EncodeJob(Base):
     )
 
     __table_args__ = (Index("idx_encode_jobs_status", "status"),)
+
+
+class LessonMaterial(Base):
+    """A downloadable supplementary file attached to a lesson (PDF slides,
+    worksheet, source code zip, etc.). The original file lives in R2 and is
+    served through the API so we can stamp each download with the requesting
+    user's identifier."""
+    __tablename__ = "lesson_materials"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lesson_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(Text, nullable=False)
+    content_type: Mapped[str] = mapped_column(Text, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    r2_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("idx_lesson_materials_lesson", "lesson_id"),)
+
+
+class MaterialDownloadLog(Base):
+    """Audit trail of who downloaded which material. Combined with the per-file
+    watermark, this gives us two independent ways to attribute a leaked file."""
+    __tablename__ = "material_download_logs"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    material_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lesson_materials.id", ondelete="CASCADE"), nullable=False
+    )
+    # Short opaque token embedded in the served file. If a copy shows up online
+    # we look up this token and find which user/IP downloaded it when.
+    watermark_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    ip: Mapped[str | None] = mapped_column(INET)
+    user_agent: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_mat_dl_logs_material", "material_id"),
+        Index("idx_mat_dl_logs_user", "user_id"),
+        Index("idx_mat_dl_logs_watermark", "watermark_id"),
+    )

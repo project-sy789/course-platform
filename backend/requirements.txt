@@ -18,3 +18,5 @@ structlog==24.4.0
 stripe==11.1.1
 aiosmtplib==3.0.2
 arq==0.26.1
+pypdf==5.1.0
+reportlab==4.2.5

@@ -37,3 +37,16 @@ def upload_bytes(key: str, data: bytes, content_type: str) -> None:
         ContentType=content_type,
         CacheControl="public, max-age=31536000, immutable",
     )
+
+
+def get_bytes(key: str) -> bytes:
+    """Fetch an object from R2. Used for materials served through the watermark
+    pipeline (we never want to give the user a public R2 URL for those)."""
+    client = get_r2_client()
+    obj = client.get_object(Bucket=settings.R2_BUCKET, Key=key)
+    return obj["Body"].read()
+
+
+def delete_object(key: str) -> None:
+    client = get_r2_client()
+    client.delete_object(Bucket=settings.R2_BUCKET, Key=key)
