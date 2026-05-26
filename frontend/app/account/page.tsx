@@ -1,0 +1,132 @@
+"use client";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { apiFetch, ApiError } from "@/lib/api";
+
+type Me = { id: string; email: string; email_verified: boolean };
+
+export default function AccountPage() {
+  const router = useRouter();
+  const [me, setMe] = useState<Me | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmEmail, setConfirmEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    apiFetch<Me>("/api/v1/auth/me")
+      .then(setMe)
+      .catch((e: ApiError) => {
+        if (e.status === 401) router.push("/login");
+        else setError(e.message);
+      });
+  }, [router]);
+
+  async function exportData() {
+    setBusy(true); setError(null);
+    try {
+      const data = await apiFetch<unknown>("/api/v1/account/export");
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `account-${me?.email ?? "data"}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e?.message ?? "export failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteAccount() {
+    if (!me) return;
+    if (!confirm("This anonymizes your account and revokes all sessions. Continue?")) return;
+    setBusy(true); setError(null);
+    try {
+      await apiFetch("/api/v1/account/delete", {
+        method: "POST",
+        body: JSON.stringify({ confirm_email: confirmEmail }),
+      });
+      router.push("/login");
+    } catch (e: any) {
+      setError(e?.message ?? "delete failed");
+      setBusy(false);
+    }
+  }
+
+  async function logoutAll() {
+    setBusy(true); setError(null);
+    try {
+      await apiFetch("/api/v1/auth/logout-all", { method: "POST" });
+      router.push("/login");
+    } catch (e: any) {
+      setError(e?.message ?? "failed");
+      setBusy(false);
+    }
+  }
+
+  if (!me) return <main className="p-8 opacity-60">Loading…</main>;
+
+  return (
+    <main className="max-w-2xl mx-auto p-8 space-y-8">
+      <h1 className="text-2xl font-semibold">Account</h1>
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      <section className="rounded-xl border border-neutral-800 p-5 space-y-2">
+        <h2 className="font-medium">Profile</h2>
+        <p className="text-sm opacity-70">{me.email}</p>
+        <p className="text-xs opacity-50">
+          Email verified: {me.email_verified ? "yes" : "no"}
+        </p>
+      </section>
+
+      <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
+        <h2 className="font-medium">Sessions</h2>
+        <p className="text-sm opacity-70">
+          Sign out of every device this account is currently logged in on.
+        </p>
+        <button
+          onClick={logoutAll} disabled={busy}
+          className="rounded-md bg-white text-black font-medium px-4 py-2 disabled:opacity-50"
+        >
+          Sign out everywhere
+        </button>
+      </section>
+
+      <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
+        <h2 className="font-medium">Export data</h2>
+        <p className="text-sm opacity-70">
+          Download a JSON copy of every record we hold for your account.
+        </p>
+        <button
+          onClick={exportData} disabled={busy}
+          className="rounded-md bg-white text-black font-medium px-4 py-2 disabled:opacity-50"
+        >
+          Download my data
+        </button>
+      </section>
+
+      <section className="rounded-xl border border-red-900/60 p-5 space-y-3">
+        <h2 className="font-medium text-red-300">Delete account</h2>
+        <p className="text-sm opacity-70">
+          Anonymizes your profile and removes lesson progress + enrollments.
+          Payment records are kept for accounting.
+          Type your email to confirm.
+        </p>
+        <input
+          type="email" value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)}
+          placeholder={me.email}
+          className="w-full rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2 outline-none focus:border-neutral-400"
+        />
+        <button
+          onClick={deleteAccount}
+          disabled={busy || confirmEmail.trim().toLowerCase() !== me.email.toLowerCase()}
+          className="rounded-md bg-red-600 text-white font-medium px-4 py-2 disabled:opacity-40"
+        >
+          Delete my account
+        </button>
+      </section>
+    </main>
+  );
+}

@@ -1,4 +1,4 @@
-"""Stripe checkout + webhook.
+"""Stripe checkout + webhook + refund.
 
 Flow:
   1. Authenticated user POSTs /checkout/session with {course_slug}
@@ -8,18 +8,24 @@ Flow:
   3. Stripe hits /webhooks/stripe (signed) when the session is paid
      → backend verifies signature, marks Payment paid, creates Enrollment
      → Enrollment is created from the WEBHOOK only — never from the redirect.
+  4. Refund: admin POSTs /admin/payments/{id}/refund or Stripe sends
+     `charge.refunded`. Either path marks the Payment refunded, revokes the
+     Enrollment, and mass-revokes the user's JWTs so they can't keep watching.
 """
 from __future__ import annotations
 
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 import stripe
 
 from ..config import settings
-from ..db import get_session
-from ..deps import current_user
+from ..db import get_redis, get_session
+from ..deps import current_admin, current_user
 from ..logging import log
 from ..models import Course, Enrollment, Payment, User
 
@@ -31,6 +37,41 @@ def _stripe_client():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Stripe not configured")
     stripe.api_key = settings.STRIPE_SECRET_KEY
     return stripe
+
+
+async def _revoke_user_sessions(redis: Redis, user_id) -> None:
+    """Mass-revoke every JWT this user holds. Used after refund so the
+    user cannot keep streaming with their existing cookie."""
+    cutoff = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    await redis.set(
+        f"jwt:user_revoke:{user_id}", str(cutoff),
+        ex=settings.JWT_TTL_MIN * 60,
+    )
+
+
+def _apply_refund(db: Session, payment: Payment) -> None:
+    """Mark a payment refunded and remove the matching enrollment.
+
+    Caller is responsible for revoking JWTs via Redis after this commits.
+    """
+    if payment.status == "refunded":
+        return
+    payment.status = "refunded"
+    enrollment = db.scalar(
+        select(Enrollment).where(
+            Enrollment.user_id == payment.user_id,
+            Enrollment.course_id == payment.course_id,
+        )
+    )
+    if enrollment:
+        db.delete(enrollment)
+    db.commit()
+    log.info(
+        "refund_applied",
+        payment_id=str(payment.id),
+        target_user_id=str(payment.user_id),
+        course_id=str(payment.course_id),
+    )
 
 
 class CheckoutBody(BaseModel):
@@ -94,7 +135,11 @@ def create_checkout_session(
 
 
 @router.post("/webhooks/stripe", include_in_schema=False)
-async def stripe_webhook(request: Request, db: Session = Depends(get_session)):
+async def stripe_webhook(
+    request: Request,
+    db: Session = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+):
     sc = _stripe_client()
     if not settings.STRIPE_WEBHOOK_SECRET:
         raise HTTPException(503, "STRIPE_WEBHOOK_SECRET not configured")
@@ -116,9 +161,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_session)):
         payment = db.scalar(select(Payment).where(Payment.stripe_session_id == session_id))
         if not payment:
             log.warning("stripe_webhook_unknown_session", session_id=session_id)
-            return {"ok": True}  # idempotent: ack so Stripe stops retrying
+            return {"ok": True}  # idempotent ack
         if payment.status == "paid":
-            return {"ok": True}  # idempotent
+            return {"ok": True}
 
         payment.status = "paid"
         payment.stripe_payment_intent = session_obj.get("payment_intent")
@@ -135,16 +180,56 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_session)):
         log.info("enrollment_created_from_payment",
                  target_user_id=str(payment.user_id), course_id=str(payment.course_id))
 
-    elif etype in ("charge.refunded", "checkout.session.expired",
-                   "payment_intent.payment_failed"):
-        # Best-effort: mark payment failed/refunded; don't auto-revoke enrollment
-        # for refunds — that's a manual policy decision.
+    elif etype in ("charge.refunded", "charge.refund.updated"):
+        # `charge.refunded` carries the charge object, not a checkout session.
+        # Match by payment_intent (stripe sends `payment_intent` on the charge).
+        charge = event["data"]["object"]
+        pi = charge.get("payment_intent")
+        if not pi:
+            return {"ok": True}
+        payment = db.scalar(select(Payment).where(Payment.stripe_payment_intent == pi))
+        if payment:
+            _apply_refund(db, payment)
+            await _revoke_user_sessions(redis, payment.user_id)
+
+    elif etype in ("checkout.session.expired", "payment_intent.payment_failed"):
         obj = event["data"]["object"]
-        session_id = obj.get("id") if etype != "charge.refunded" else None
+        session_id = obj.get("id")
         if session_id:
             payment = db.scalar(select(Payment).where(Payment.stripe_session_id == session_id))
-            if payment:
-                payment.status = "failed" if etype != "charge.refunded" else "refunded"
+            if payment and payment.status == "pending":
+                payment.status = "failed"
                 db.commit()
 
     return {"ok": True}
+
+
+# ---------- Admin-initiated refund ----------
+
+@router.post("/admin/payments/{payment_id}/refund")
+async def admin_refund_payment(
+    payment_id: str,
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+):
+    """Issue a refund through Stripe and revoke the enrollment + sessions.
+
+    Stripe's `charge.refunded` webhook will also fire — `_apply_refund` is
+    idempotent so duplicate processing is safe.
+    """
+    payment = db.get(Payment, payment_id)
+    if not payment:
+        raise HTTPException(404, "payment not found")
+    if payment.status != "paid":
+        raise HTTPException(409, f"payment not refundable (status={payment.status})")
+    if not payment.stripe_payment_intent:
+        raise HTTPException(409, "payment has no Stripe payment_intent")
+
+    sc = _stripe_client()
+    refund = sc.Refund.create(payment_intent=payment.stripe_payment_intent)
+    log.info("admin_refund", payment_id=payment_id, refund_id=refund.get("id"))
+
+    _apply_refund(db, payment)
+    await _revoke_user_sessions(redis, payment.user_id)
+    return {"ok": True, "refund_id": refund.get("id")}

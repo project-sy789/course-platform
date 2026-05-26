@@ -21,6 +21,7 @@ from .routers import admin as admin_router
 from .routers import payments as payments_router
 from .routers import materials as materials_router
 from .routers import progress as progress_router
+from .routers import account as account_router
 
 configure_logging()
 
@@ -53,6 +54,7 @@ app.include_router(admin_router.router)
 app.include_router(payments_router.router)
 app.include_router(materials_router.router)
 app.include_router(progress_router.router)
+app.include_router(account_router.router)
 
 # Expose /metrics for Prometheus. Excluded paths keep noise out of dashboards.
 Instrumentator(
