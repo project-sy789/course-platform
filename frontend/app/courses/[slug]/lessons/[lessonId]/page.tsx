@@ -60,7 +60,7 @@ export default function LessonPage({
       <div className="max-w-5xl mx-auto p-6">
         <h1 className="text-xl font-semibold mb-4">{lesson.title}</h1>
         <div className="relative aspect-video bg-black rounded-xl overflow-hidden select-none">
-          {!paused && <SecurePlayer videoId={lesson.video_id} />}
+          {!paused && <SecurePlayer videoId={lesson.video_id} lessonId={lesson.id} />}
           <WatermarkOverlay userEmail={me.email} userId={me.id} />
         </div>
         <p className="mt-3 text-xs opacity-50">

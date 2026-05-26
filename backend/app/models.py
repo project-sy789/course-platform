@@ -215,3 +215,27 @@ class MaterialDownloadLog(Base):
         Index("idx_mat_dl_logs_user", "user_id"),
         Index("idx_mat_dl_logs_watermark", "watermark_id"),
     )
+
+
+class LessonProgress(Base):
+    """Per-user, per-lesson playback state.
+
+    Resume-from-last-position uses `position_seconds`. Course completion
+    summaries aggregate `completed=True` rows. We also keep a small history
+    by writing to the audit log every time the position bumps significantly,
+    but the primary state is right here — one row per (user, lesson)."""
+    __tablename__ = "lesson_progress"
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    lesson_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="CASCADE"), primary_key=True
+    )
+    position_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (Index("idx_lesson_progress_user", "user_id"),)

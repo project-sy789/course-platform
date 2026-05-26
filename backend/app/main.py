@@ -20,6 +20,7 @@ from .routers import lessons as lessons_router
 from .routers import admin as admin_router
 from .routers import payments as payments_router
 from .routers import materials as materials_router
+from .routers import progress as progress_router
 
 configure_logging()
 
@@ -40,7 +41,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
     expose_headers=["Content-Type"],
 )
@@ -51,6 +52,7 @@ app.include_router(lessons_router.router)
 app.include_router(admin_router.router)
 app.include_router(payments_router.router)
 app.include_router(materials_router.router)
+app.include_router(progress_router.router)
 
 # Expose /metrics for Prometheus. Excluded paths keep noise out of dashboards.
 Instrumentator(
