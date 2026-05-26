@@ -171,8 +171,15 @@ class Payment(Base):
     course_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
     )
-    stripe_session_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    stripe_session_id: Mapped[str | None] = mapped_column(Text, unique=True)
     stripe_payment_intent: Mapped[str | None] = mapped_column(Text)
+    # When the payment came from a bank-transfer slip rather than Stripe.
+    # Mutually exclusive in practice with stripe_session_id; both are nullable
+    # so either rail can produce a Payment row.
+    slip_upload_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("slip_uploads.id", ondelete="SET NULL")
+    )
+    payment_method: Mapped[str] = mapped_column(Text, nullable=False, default="stripe")
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     # VAT breakdown (Thai 7% VAT). amount_cents = subtotal_cents + vat_cents.
     # Computed at payment-creation time from the configured VAT_RATE so historic
@@ -391,4 +398,57 @@ class LoginEvent(Base):
 
     __table_args__ = (
         Index("idx_login_events_user_time", "user_id", "created_at"),
+    )
+
+
+class SlipUpload(Base):
+    """A bank-transfer slip uploaded by the buyer in lieu of card payment.
+
+    Flow:
+      1. User uploads slip image. Row created with status='pending'.
+      2. If SLIPOK_API_KEY is configured the upload handler calls SlipOK,
+         stores the JSON response in `verify_response`, and auto-approves on
+         a successful match (amount + receiver account agree). Otherwise it
+         stays 'pending' for admin review.
+      3. Approving (auto or manual) creates the matching Enrollment +
+         Payment row (so the existing invoice/tax pipeline still runs).
+
+    Slips are kept even after approval — they're the legal record of the
+    transfer for accounting + audit. R2 holds the image; DB holds metadata.
+    """
+    __tablename__ = "slip_uploads"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Exactly one of course_id / lesson_id is set, mirroring the per-course
+    # vs per-lesson purchase split. CHECK constraint below enforces that.
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="SET NULL")
+    )
+    lesson_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="SET NULL")
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    r2_image_key: Mapped[str] = mapped_column(Text, nullable=False)
+    # pending | auto_approved | admin_approved | rejected
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    # SlipOK raw response (JSONB would be nicer; Text keeps the migration small).
+    verify_response: Mapped[str | None] = mapped_column(Text)
+    # Slip transaction reference (from SlipOK or admin-typed). Unique to make
+    # accidental re-upload of the same slip caught by the DB.
+    slip_ref: Mapped[str | None] = mapped_column(Text, unique=True)
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL")
+    )
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_slip_uploads_user", "user_id"),
+        Index("idx_slip_uploads_status", "status"),
     )

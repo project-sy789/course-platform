@@ -102,3 +102,44 @@ export function createCheckoutSession(course_slug: string) {
     { method: "POST", body: JSON.stringify({ course_slug }) },
   );
 }
+
+export type SlipInfo = {
+  bank_name: string;
+  account_number: string;
+  account_name: string;
+  promptpay_id: string;
+  auto_verify: boolean;
+};
+
+export function getSlipInfo() {
+  return apiFetch<SlipInfo>("/api/v1/slip-payments/info");
+}
+
+export type SlipUploadResult = {
+  status: "auto_approved" | "pending";
+  message: string;
+  slip_id: string;
+};
+
+export async function uploadSlip(opts: {
+  image: File;
+  course_slug?: string;
+  lesson_id?: string;
+}): Promise<SlipUploadResult> {
+  const form = new FormData();
+  form.append("image", opts.image);
+  if (opts.course_slug) form.append("course_slug", opts.course_slug);
+  if (opts.lesson_id) form.append("lesson_id", opts.lesson_id);
+  const res = await fetch(`${API}/api/v1/slip-payments/upload`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "X-Device-Id": getDeviceId() },
+    body: form,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* ignore */ }
+    throw new ApiError(res.status, detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}

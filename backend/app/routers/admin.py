@@ -24,10 +24,12 @@ from ..db import get_session
 from ..deps import current_admin, compute_enrollment_expiry
 from ..models import (
     User, Course, Lesson, Video, VideoKey, Enrollment, KeyAccessLog, EncodeJob,
+    SlipUpload,
 )
 from ..crypto import encrypt_video_key
-from ..r2 import upload_bytes
+from ..r2 import upload_bytes, presigned_get_url
 from ..config import settings
+from .slips import materialize_approval
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -560,3 +562,94 @@ def access_logs(
             "created_at": r.created_at.isoformat(),
         } for r in rows
     ]
+
+
+# ---------- Slip-upload review ----------
+# Admin sees pending slips, opens the image via a short-lived presigned URL,
+# and either approves (which creates the Payment + Enrollment exactly like
+# Stripe webhook does) or rejects (which leaves the slip on file but never
+# unlocks playback). Both transitions are idempotent.
+
+class SlipReviewBody(BaseModel):
+    note: str | None = None
+
+
+@router.get("/slip-uploads")
+def list_slip_uploads(
+    status_filter: str = "pending",
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    q = select(SlipUpload).order_by(SlipUpload.created_at.desc()).limit(200)
+    if status_filter != "all":
+        q = q.where(SlipUpload.status == status_filter)
+    rows = db.scalars(q).all()
+    out = []
+    for s in rows:
+        buyer = db.get(User, s.user_id)
+        course = db.get(Course, s.course_id) if s.course_id else None
+        lesson = db.get(Lesson, s.lesson_id) if s.lesson_id else None
+        # 5-minute presign — long enough for the admin to open + scrutinize,
+        # short enough that a forwarded link can't be reused later.
+        image_url = presigned_get_url(s.r2_image_key, expires_in=300)
+        out.append({
+            "id": str(s.id),
+            "user_email": buyer.email if buyer else None,
+            "amount_cents": s.amount_cents,
+            "status": s.status,
+            "target": (
+                {"type": "course", "title": course.title, "slug": course.slug}
+                if course else {"type": "lesson", "title": lesson.title} if lesson
+                else None
+            ),
+            "slip_ref": s.slip_ref,
+            "verify_response": s.verify_response,
+            "image_url": image_url,
+            "created_at": s.created_at.isoformat(),
+            "reviewed_at": s.reviewed_at.isoformat() if s.reviewed_at else None,
+            "review_note": s.review_note,
+        })
+    return out
+
+
+@router.post("/slip-uploads/{slip_id}/approve")
+def approve_slip(
+    slip_id: str,
+    body: SlipReviewBody,
+    actor: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    slip = db.get(SlipUpload, slip_id)
+    if not slip:
+        raise HTTPException(404, "slip not found")
+    if slip.status in ("auto_approved", "admin_approved"):
+        return {"ok": True, "already": slip.status}
+    if slip.status == "rejected":
+        raise HTTPException(409, "slip already rejected — buyer must re-upload")
+    slip.status = "admin_approved"
+    materialize_approval(
+        db, slip, method="slip_manual", reviewed_by=actor.id,
+        note=body.note or "admin approve",
+    )
+    db.commit()
+    return {"ok": True, "payment_id": str(slip.payment_id) if slip.payment_id else None}
+
+
+@router.post("/slip-uploads/{slip_id}/reject")
+def reject_slip(
+    slip_id: str,
+    body: SlipReviewBody,
+    actor: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    slip = db.get(SlipUpload, slip_id)
+    if not slip:
+        raise HTTPException(404, "slip not found")
+    if slip.status in ("auto_approved", "admin_approved"):
+        raise HTTPException(409, "already approved — issue a refund instead")
+    slip.status = "rejected"
+    slip.reviewed_by = actor.id
+    slip.reviewed_at = dt.datetime.now(dt.timezone.utc)
+    slip.review_note = body.note or "admin reject"
+    db.commit()
+    return {"ok": True}

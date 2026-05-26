@@ -82,6 +82,22 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "https://app.example.com"
 
+    # ---------- Slip-upload payment ----------
+    # Receiver bank info shown to the buyer on the slip-upload page.
+    # PROMPTPAY_ID is optional — when set, the page renders a QR code for it.
+    RECEIVER_BANK_NAME: str = ""
+    RECEIVER_BANK_ACCOUNT: str = ""
+    RECEIVER_NAME: str = ""
+    PROMPTPAY_ID: str = ""
+    # SlipOK API for automated slip verification. Leave SLIPOK_API_KEY empty
+    # to disable auto-verify — every upload then waits for admin approval.
+    # Endpoint format: https://api.slipok.com/api/line/apikey/{BRANCH_ID}
+    SLIPOK_API_KEY: str = ""
+    SLIPOK_BRANCH_ID: str = ""
+    # Amount tolerance in satang. SlipOK returns the slip's transferred amount
+    # and we require it >= price - tolerance. Banks sometimes round funny.
+    SLIPOK_AMOUNT_TOLERANCE_SATANG: int = 0
+
     # End-to-end test bypass. Set ONLY in dev/CI; it exposes a route to
     # force-verify a user's email without going through SMTP. Production
     # must leave this empty (the route is then not registered at all).

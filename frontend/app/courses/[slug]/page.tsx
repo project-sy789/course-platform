@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch, ApiError, createCheckoutSession } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { apiFetch, ApiError } from "@/lib/api";
 import { formatTHB } from "@/lib/format";
 
 function accessLabel(days: number | null | undefined): string {
@@ -22,31 +23,15 @@ type CourseDetail = {
 };
 
 export default function CoursePage({ params }: { params: { slug: string } }) {
+  const router = useRouter();
   const [course, setCourse] = useState<CourseDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [buying, setBuying] = useState(false);
 
   useEffect(() => {
     apiFetch<CourseDetail>(`/api/v1/courses/${params.slug}`)
       .then(setCourse)
-      .catch((e) => setError(e?.message ?? "failed"));
+      .catch((e: ApiError) => setError(e?.message ?? "failed"));
   }, [params.slug]);
-
-  async function buy() {
-    if (!course) return;
-    setBuying(true); setError(null);
-    try {
-      const { checkout_url } = await createCheckoutSession(course.slug);
-      window.location.href = checkout_url;
-    } catch (e: any) {
-      if (e instanceof ApiError && e.status === 401) {
-        window.location.href = "/login";
-        return;
-      }
-      setError(e?.message ?? "failed");
-      setBuying(false);
-    }
-  }
 
   if (error) return <main className="p-8 text-red-400">เกิดข้อผิดพลาด: {error}</main>;
   if (!course) return <main className="p-8 opacity-60">กำลังโหลด…</main>;
@@ -67,10 +52,10 @@ export default function CoursePage({ params }: { params: { slug: string } }) {
         </div>
         {!isFree && (
           <button
-            onClick={buy} disabled={buying}
-            className="rounded-md bg-white text-black font-medium px-4 py-2 disabled:opacity-50 whitespace-nowrap"
+            onClick={() => router.push(`/checkout/${course.slug}`)}
+            className="rounded-md bg-white text-black font-medium px-4 py-2 whitespace-nowrap"
           >
-            {buying ? "…" : `ซื้อ ${formatTHB(course.price_cents)}`}
+            ซื้อ {formatTHB(course.price_cents)}
           </button>
         )}
       </div>
