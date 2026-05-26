@@ -65,17 +65,32 @@ def require_enrollment_for_video(video_id: str, user: User, db: Session) -> Less
         raise HTTPException(status.HTTP_404_NOT_FOUND, "video not found")
     if lesson.is_preview:
         return lesson
+    now = dt.datetime.now(dt.timezone.utc)
+
     enrolled = db.scalar(
         select(Enrollment).where(
             Enrollment.user_id == user.id,
             Enrollment.course_id == lesson.course_id,
         )
     )
-    if not enrolled:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "not enrolled")
-    if enrolled.expires_at is not None and enrolled.expires_at <= dt.datetime.now(dt.timezone.utc):
+    if enrolled and (enrolled.expires_at is None or enrolled.expires_at > now):
+        return lesson
+
+    # Per-lesson entitlement is the second valid path — set up the import
+    # lazily so we don't widen the deps↔models surface unnecessarily.
+    from .models import LessonEntitlement
+    ent = db.scalar(
+        select(LessonEntitlement).where(
+            LessonEntitlement.user_id == user.id,
+            LessonEntitlement.lesson_id == lesson.id,
+        )
+    )
+    if ent and (ent.expires_at is None or ent.expires_at > now):
+        return lesson
+
+    if enrolled:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "enrollment expired")
-    return lesson
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "not enrolled")
 
 
 def compute_enrollment_expiry(course) -> "dt.datetime | None":

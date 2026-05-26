@@ -120,6 +120,56 @@ def revoke_enrollment(
     return {"ok": True}
 
 
+# ---------- Per-lesson entitlements (ขายแยกรายบท) ----------
+
+class GrantLessonEntitlement(BaseModel):
+    user_email: EmailStr
+    lesson_id: str
+    # Optional: limit access to N days from now. None = lifetime.
+    duration_days: Optional[int] = None
+
+
+@router.post("/lesson-entitlements")
+def grant_lesson_entitlement(
+    body: GrantLessonEntitlement,
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    from ..models import Lesson, LessonEntitlement
+    user = db.scalar(select(User).where(User.email == body.user_email))
+    lesson = db.get(Lesson, body.lesson_id)
+    if not user or not lesson:
+        raise HTTPException(404, "user or lesson not found")
+    existing = db.scalar(
+        select(LessonEntitlement).where(
+            LessonEntitlement.user_id == user.id,
+            LessonEntitlement.lesson_id == lesson.id,
+        )
+    )
+    if existing:
+        return {"id": str(existing.id), "status": "already_entitled"}
+    expires_at = None
+    if body.duration_days and body.duration_days > 0:
+        expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=body.duration_days)
+    ent = LessonEntitlement(user_id=user.id, lesson_id=lesson.id, expires_at=expires_at)
+    db.add(ent); db.commit()
+    return {"id": str(ent.id), "status": "created"}
+
+
+@router.delete("/lesson-entitlements/{entitlement_id}")
+def revoke_lesson_entitlement(
+    entitlement_id: str,
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    from ..models import LessonEntitlement
+    ent = db.get(LessonEntitlement, entitlement_id)
+    if not ent:
+        raise HTTPException(404, "not found")
+    db.delete(ent); db.commit()
+    return {"ok": True}
+
+
 # ---------- Courses ----------
 
 class CourseIn(BaseModel):

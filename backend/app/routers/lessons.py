@@ -38,7 +38,8 @@ def get_course(slug: str, db: Session = Depends(get_session)):
         "price_cents": course.price_cents,
         "access_duration_days": course.access_duration_days,
         "lessons": [
-            {"id": str(l.id), "title": l.title, "position": l.position, "is_preview": l.is_preview}
+            {"id": str(l.id), "title": l.title, "position": l.position,
+             "is_preview": l.is_preview, "price_cents": l.price_cents}
             for l in lessons
         ],
     }
@@ -55,16 +56,28 @@ def get_lesson(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "lesson not found")
 
     if not lesson.is_preview:
+        now = dt.datetime.now(dt.timezone.utc)
         enrolled = db.scalar(
             select(Enrollment).where(
                 Enrollment.user_id == user.id,
                 Enrollment.course_id == lesson.course_id,
             )
         )
-        if not enrolled:
+        course_ok = bool(enrolled) and (enrolled.expires_at is None or enrolled.expires_at > now)
+
+        from ..models import LessonEntitlement
+        ent = db.scalar(
+            select(LessonEntitlement).where(
+                LessonEntitlement.user_id == user.id,
+                LessonEntitlement.lesson_id == lesson.id,
+            )
+        )
+        lesson_ok = bool(ent) and (ent.expires_at is None or ent.expires_at > now)
+
+        if not (course_ok or lesson_ok):
+            if enrolled or ent:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "enrollment expired")
             raise HTTPException(status.HTTP_403_FORBIDDEN, "not enrolled")
-        if enrolled.expires_at is not None and enrolled.expires_at <= dt.datetime.now(dt.timezone.utc):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "enrollment expired")
 
     return {
         "id": str(lesson.id),

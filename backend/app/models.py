@@ -62,8 +62,35 @@ class Lesson(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     is_preview: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Optional per-lesson price (satang). 0 = bundled with course — must own the
+    # whole course to unlock. >0 = sold individually as well (course enrollment
+    # still unlocks it; this just opens a second purchase path).
+    price_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     __table_args__ = (UniqueConstraint("course_id", "position", name="uq_lesson_position"),)
+
+
+class LessonEntitlement(Base):
+    """Standalone unlock for a single lesson — bought without taking the
+    whole course. Coexists with Enrollment: lesson access is granted by
+    either a non-expired Enrollment OR a non-expired LessonEntitlement.
+
+    Lifetime entitlements have expires_at = NULL, mirroring Enrollment."""
+    __tablename__ = "lesson_entitlements"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    lesson_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "lesson_id", name="uq_lesson_entitlement"),
+        Index("idx_lesson_entitlement_user", "user_id"),
+    )
 
 
 class VideoKey(Base):
