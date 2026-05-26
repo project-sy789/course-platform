@@ -81,8 +81,15 @@ async def client(fake_redis):
     async def _override():
         return fake_redis
     app.dependency_overrides[get_redis] = _override
+    # AbuseGuardMiddleware calls get_redis_singleton() directly (not via
+    # Depends), so we also redirect that to the fakeredis for the duration
+    # of the test.
+    from app import db as _db
+    real_singleton = _db.get_redis_singleton
+    _db.get_redis_singleton = lambda: fake_redis  # type: ignore
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+    _db.get_redis_singleton = real_singleton  # type: ignore
     app.dependency_overrides.clear()
 
 

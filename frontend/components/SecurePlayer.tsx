@@ -1,13 +1,12 @@
 "use client";
 import { useEffect, useRef } from "react";
 import Hls, { type HlsConfig } from "hls.js";
-import { apiFetch, createPlaybackSession } from "@/lib/api";
+import { apiFetch, createPlaybackSession, PlaybackSession } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_BASE!;
 
 type Props = {
   videoId: string;
-  // Optional: lesson context drives progress tracking + resume-from-last.
   lessonId?: string;
 };
 
@@ -25,27 +24,15 @@ export default function SecurePlayer({ videoId, lessonId }: Props) {
     let hls: Hls | null = null;
     let cancelled = false;
     let interval: ReturnType<typeof setInterval> | null = null;
+    // Single-flight guard so a burst of expired-key errors doesn't trigger
+    // N concurrent session re-mints.
+    let renewing: Promise<PlaybackSession> | null = null;
+    let recoverAttempts = 0;
+    const MAX_RECOVERS = 5;
 
-    (async () => {
-      const sess = await createPlaybackSession(videoId);
-      if (cancelled || !videoRef.current) return;
+    const mountHls = (sess: PlaybackSession, resumeAt: number) => {
+      if (!videoRef.current) return;
       const video = videoRef.current;
-
-      // Resume from last position (if we have a lesson + prior progress).
-      let resumeAt = 0;
-      if (lessonId) {
-        try {
-          const prog = await apiFetch<ProgressResp>(
-            `/api/v1/lessons/${lessonId}/progress`,
-          );
-          if (prog && prog.position_seconds > 5 && !prog.completed) {
-            resumeAt = prog.position_seconds;
-          }
-        } catch {
-          /* first-time viewer or no enrollment surfaced via require_enrollment;
-             playback session creation would have failed first anyway. */
-        }
-      }
 
       if (Hls.isSupported()) {
         const BaseLoader: any = (Hls.DefaultConfig as HlsConfig).loader;
@@ -53,29 +40,87 @@ export default function SecurePlayer({ videoId, lessonId }: Props) {
         class KeyRewritingLoader extends BaseLoader {
           load(context: any, config: any, callbacks: any) {
             if (context.type === "key") {
-              context.url = `${API}${sess.key_url_template}`;
+              // Always pull the freshest key URL from the current session.
+              context.url = `${API}${currentSess.key_url_template}`;
             }
             return super.load(context, config, callbacks);
           }
         }
 
+        // Mutable holder so the loader closure picks up renewed sessions
+        // without us having to rebuild the Hls instance.
+        // eslint-disable-next-line prefer-const
+        let currentSess: PlaybackSession = sess;
+
         hls = new Hls({
           loader: KeyRewritingLoader,
-          // The manifest, sub-manifests, and key URIs are all served from
-          // our API now (private R2 + proxy rewrite). Send the session
-          // cookie on every same-origin call so require_enrollment passes.
           xhrSetup: (xhr, url) => {
             if (url.startsWith(API) || url.startsWith("/")) {
               xhr.withCredentials = true;
             }
           },
+          // hls.js's built-in retries cover the common case of one bad packet.
+          // We layer session-re-mint on top for the "everything 403'd because
+          // the session expired" case.
+          manifestLoadingMaxRetry: 2,
+          levelLoadingMaxRetry: 2,
+          fragLoadingMaxRetry: 4,
         });
+
+        hls.on(Hls.Events.ERROR, async (_evt, data) => {
+          // Network errors with HTTP 403/404 on key/manifest/fragment are
+          // the signature of a single-use token that lost the race with
+          // hls.js's internal retry. Renew the session and reload from the
+          // current playback position — much better UX than ending playback.
+          if (!data.fatal) return;
+          const status: number | undefined = data.response?.code;
+          const isTokenExpiry =
+            (data.type === "networkError") &&
+            (status === 403 || status === 404);
+          if (!isTokenExpiry || recoverAttempts >= MAX_RECOVERS) {
+            // Out of recovers — surface the failure rather than burn cycles.
+            hls?.destroy();
+            return;
+          }
+          recoverAttempts += 1;
+          try {
+            if (!renewing) renewing = createPlaybackSession(videoId);
+            const fresh = await renewing;
+            renewing = null;
+            currentSess = fresh;
+            const at = video.currentTime || 0;
+            // stopLoad + new source preserves the attached media element;
+            // we reseek after the new manifest is parsed.
+            hls?.stopLoad();
+            hls?.loadSource(`${API}${fresh.manifest_url}`);
+            hls?.startLoad(at);
+          } catch {
+            renewing = null;
+            hls?.destroy();
+          }
+        });
+
         hls.loadSource(`${API}${sess.manifest_url}`);
         hls.attachMedia(video);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Safari native HLS path. Cookie ride-along works because the URL
-        // is same-origin from the browser's perspective.
         video.src = `${API}${sess.manifest_url}`;
+        // Safari error → re-mint a session and reload src. Limited retry
+        // budget so a permanently-failing video doesn't loop forever.
+        const onErr = async () => {
+          if (recoverAttempts >= MAX_RECOVERS) return;
+          recoverAttempts += 1;
+          try {
+            const fresh = await createPlaybackSession(videoId);
+            const at = video.currentTime || 0;
+            video.src = `${API}${fresh.manifest_url}`;
+            video.addEventListener(
+              "loadedmetadata",
+              () => { video.currentTime = at; },
+              { once: true },
+            );
+          } catch { /* give up silently */ }
+        };
+        video.addEventListener("error", onErr);
       }
 
       if (resumeAt > 0) {
@@ -86,11 +131,29 @@ export default function SecurePlayer({ videoId, lessonId }: Props) {
         };
         video.addEventListener("loadedmetadata", seek, { once: true });
       }
+    };
+
+    (async () => {
+      const sess = await createPlaybackSession(videoId);
+      if (cancelled || !videoRef.current) return;
+
+      let resumeAt = 0;
+      if (lessonId) {
+        try {
+          const prog = await apiFetch<ProgressResp>(
+            `/api/v1/lessons/${lessonId}/progress`,
+          );
+          if (prog && prog.position_seconds > 5 && !prog.completed) {
+            resumeAt = prog.position_seconds;
+          }
+        } catch { /* first-time viewer */ }
+      }
+
+      mountHls(sess, resumeAt);
 
       if (!lessonId) return;
+      const video = videoRef.current!;
 
-      // Persist progress every ~10s while playing, plus on pause/unmount.
-      // Skipping rapid scrubs keeps DB writes low.
       const sendProgress = () => {
         if (!video.duration || !Number.isFinite(video.duration)) return;
         const pos = Math.floor(video.currentTime);

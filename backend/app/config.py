@@ -13,7 +13,12 @@ class Settings(BaseSettings):
     KEY_RATE_LIMIT_PER_MIN: int = 30
     # Max concurrent playback sessions a single user may hold across all videos.
     MAX_CONCURRENT_SESSIONS: int = 3
-    KEK_BASE64: str
+    KEK_BASE64: str = ""
+    # Alternative to KEK_BASE64: path to a file whose contents are the
+    # base64-encoded KEK. Preferred in production — pass via systemd
+    # LoadCredential= or Docker secret so the key never appears in `env`,
+    # `docker inspect`, or process listings. If both are set, the file wins.
+    KEK_FILE: str = ""
     R2_PUBLIC_BASE: str
 
     # R2 admin upload credentials (only needed for /admin/* upload endpoints)

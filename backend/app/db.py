@@ -19,3 +19,8 @@ def get_session():
 
 async def get_redis() -> Redis:
     return _redis
+
+
+def get_redis_singleton() -> Redis:
+    """Sync accessor for non-Depends call sites (middleware). Same instance."""
+    return _redis

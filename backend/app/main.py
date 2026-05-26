@@ -14,6 +14,7 @@ from .config import settings
 from .db import get_session, get_redis
 from .logging import configure_logging
 from .middleware import RequestContextMiddleware
+from .abuse_guard import AbuseGuardMiddleware
 from .routers import auth as auth_router
 from .routers import videos as videos_router
 from .routers import lessons as lessons_router
@@ -31,6 +32,7 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 app = FastAPI(title="Course Platform API", version="1.0.0")
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(AbuseGuardMiddleware)
 app.add_middleware(RequestContextMiddleware)
 
 
