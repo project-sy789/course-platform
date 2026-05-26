@@ -1,0 +1,130 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: course-api
+    folder: course-platform
+    interval: 1m
+    rules:
+      # 1. API service down (Prometheus can't reach the /metrics endpoint)
+      - uid: course-api-down
+        title: "API down"
+        condition: B
+        for: 2m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "Course API is down"
+          description: "Prometheus has not been able to scrape course-api for 2m. Service may be crashed, OOMed, or behind a broken Caddy."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prom-default
+            model:
+              refId: A
+              expr: 'up{job="course-api"}'
+              instant: true
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # 2. High 5xx rate over 5m
+      - uid: course-api-5xx
+        title: "5xx error rate elevated"
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "5xx rate > 0.5/s for 5m"
+          description: "Backend is throwing server errors. Check api logs and recent deploys."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prom-default
+            model:
+              refId: A
+              expr: 'sum(rate(http_requests_total{job="course-api",status=~"5.."}[5m]))'
+              instant: true
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.5] }
+
+      # 3. Spike in key endpoint denials (likely credential stuffing or session replay)
+      - uid: course-api-key-denials
+        title: "Key endpoint denial spike"
+        condition: B
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "Sustained 403s on /videos/{id}/key"
+          description: |
+            More than 1/s denied key fetches over 2m. This is the canary for token replay,
+            credential stuffing, or a leaked session token. Drill into /admin/logs and
+            filter granted=false to identify the source IP / user.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prom-default
+            model:
+              refId: A
+              expr: 'sum(rate(http_requests_total{job="course-api",handler=~".*get_video_key.*",status="403"}[5m]))'
+              instant: true
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+
+      # 4. p95 latency over 1s for 5m
+      - uid: course-api-latency
+        title: "p95 latency elevated"
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 request latency > 1s for 5m"
+          description: "Slow API responses. Check DB queries, Redis health, R2 latency."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prom-default
+            model:
+              refId: A
+              expr: 'histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="course-api"}[5m])))'
+              instant: true
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [1.0] }

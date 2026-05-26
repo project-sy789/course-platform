@@ -11,7 +11,7 @@
       "title": "Request rate (req/s)",
       "id": 1,
       "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
       "targets": [
         {
           "expr": "sum by (handler) (rate(http_requests_total{job=\"course-api\"}[5m]))",
@@ -24,7 +24,7 @@
       "title": "p95 latency (seconds)",
       "id": 2,
       "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
       "targets": [
         {
           "expr": "histogram_quantile(0.95, sum by (le, handler) (rate(http_request_duration_seconds_bucket{job=\"course-api\"}[5m])))",
@@ -37,7 +37,7 @@
       "title": "5xx rate",
       "id": 3,
       "gridPos": { "x": 0, "y": 8, "w": 6, "h": 6 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
       "targets": [
         {
           "expr": "sum(rate(http_requests_total{job=\"course-api\",status=~\"5..\"}[5m]))"
@@ -51,7 +51,7 @@
       "description": "403 on /api/v1/videos/{video_id}/key — credential stuffing or replay signal",
       "id": 4,
       "gridPos": { "x": 6, "y": 8, "w": 6, "h": 6 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
       "targets": [
         {
           "expr": "sum(rate(http_requests_total{job=\"course-api\",handler=~\".*get_video_key.*\",status=\"403\"}[5m]))"
@@ -64,7 +64,7 @@
       "title": "Status code mix",
       "id": 5,
       "gridPos": { "x": 12, "y": 8, "w": 12, "h": 6 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "datasource": { "type": "prometheus", "uid": "prom-default" },
       "targets": [
         {
           "expr": "sum by (status) (rate(http_requests_total{job=\"course-api\"}[5m]))",

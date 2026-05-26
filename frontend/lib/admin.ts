@@ -46,15 +46,16 @@ export const adminApi = {
   },
   createUpload: () =>
     apiFetch<{ upload_id: string }>("/api/v1/admin/uploads", { method: "POST" }),
-  uploadFile: async (uploadId: string, file: File) => {
+  uploadFile: async (uploadId: string, file: File, relpath: string = "") => {
     const fd = new FormData();
     fd.append("filename", file.name);
+    fd.append("relpath", relpath);
     fd.append("file", file);
     const res = await fetch(
       `${process.env.NEXT_PUBLIC_API_BASE}/api/v1/admin/uploads/${uploadId}/file`,
       { method: "POST", credentials: "include", body: fd },
     );
-    if (!res.ok) throw new Error(`upload ${file.name} failed: ${res.status}`);
+    if (!res.ok) throw new Error(`upload ${relpath ? relpath + "/" : ""}${file.name} failed: ${res.status}`);
     return res.json() as Promise<{ ok: boolean; size: number }>;
   },
   finalize: (body: {

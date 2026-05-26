@@ -4,6 +4,23 @@ import { adminApi } from "@/lib/admin";
 
 type Phase = "idle" | "uploading" | "finalizing" | "done";
 
+type FileEntry = { file: File; relpath: string; filename: string };
+
+// `webkitRelativePath` is set when an input has the `webkitdirectory` attribute.
+// We use it to preserve the directory structure for multi-bitrate HLS uploads.
+function entriesFrom(list: FileList): FileEntry[] {
+  return Array.from(list).map((f) => {
+    const wp = (f as any).webkitRelativePath as string | undefined;
+    if (!wp) return { file: f, relpath: "", filename: f.name };
+    // Strip the top-level folder name picked by the user, keep subdirs.
+    const parts = wp.split("/");
+    parts.shift(); // drop top folder
+    const filename = parts.pop() || f.name;
+    const relpath = parts.join("/");
+    return { file: f, relpath, filename };
+  });
+}
+
 export default function AdminUploadPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState({ done: 0, total: 0 });
@@ -15,31 +32,31 @@ export default function AdminUploadPage() {
     lessonTitle: "",
     lessonPosition: 1,
     aesKeyHex: "",
-    manifestFilename: "index.m3u8",
+    manifestFilename: "master.m3u8",
     isPreview: false,
   });
-  const [files, setFiles] = useState<FileList | null>(null);
+  const [entries, setEntries] = useState<FileEntry[]>([]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null); setResult(null);
-    if (!files || files.length === 0) { setError("Select HLS files"); return; }
+    if (entries.length === 0) { setError("Select HLS files or a folder"); return; }
     if (!/^[0-9a-fA-F]{32}$/.test(form.aesKeyHex)) {
       setError("AES key must be 32 hex chars (16 bytes)"); return;
     }
-    if (![...files].some((f) => f.name === form.manifestFilename)) {
-      setError(`Manifest file "${form.manifestFilename}" not in selection`); return;
+    if (!entries.some((e) => e.relpath === "" && e.filename === form.manifestFilename)) {
+      setError(`Top-level "${form.manifestFilename}" missing from selection`); return;
     }
 
     try {
       const { upload_id } = await adminApi.createUpload();
 
       setPhase("uploading");
-      setProgress({ done: 0, total: files.length });
-      const arr = Array.from(files);
-      for (let i = 0; i < arr.length; i++) {
-        await adminApi.uploadFile(upload_id, arr[i]);
-        setProgress({ done: i + 1, total: arr.length });
+      setProgress({ done: 0, total: entries.length });
+      for (let i = 0; i < entries.length; i++) {
+        const { file, relpath } = entries[i];
+        await adminApi.uploadFile(upload_id, file, relpath);
+        setProgress({ done: i + 1, total: entries.length });
       }
 
       setPhase("finalizing");
@@ -65,24 +82,20 @@ export default function AdminUploadPage() {
       <h1 className="text-xl font-semibold mb-6">Upload video</h1>
 
       <div className="rounded-xl border border-neutral-800 p-4 mb-6 text-sm space-y-2">
-        <p className="font-medium">Encode flow (do this locally before upload)</p>
-        <pre className="bg-neutral-900 p-3 rounded overflow-x-auto text-xs">{`# 1. Generate a 16-byte AES key
-KEY_HEX=$(openssl rand -hex 16)
-echo -n "$KEY_HEX" | xxd -r -p > video.key
+        <p className="font-medium">Multi-bitrate encode flow (run locally before upload)</p>
+        <pre className="bg-neutral-900 p-3 rounded overflow-x-auto text-xs">{`# Use the helper script bundled with the repo:
+cd backend/scripts
+./encode_multibitrate.sh source.mp4 ./out
 
-# 2. Build key_info.txt — the URI here is overridden by hls.js loader at playback,
-#    but Safari (native HLS) reads it verbatim, so point it at your real backend:
-cat > key_info.txt <<EOF
-https://api.example.com/api/v1/videos/PLACEHOLDER/key
-$(pwd)/video.key
-EOF
-
-# 3. Encode HLS with AES-128 segment encryption
-ffmpeg -i source.mp4 \\
-  -hls_time 6 -hls_key_info_file key_info.txt -hls_playlist_type vod \\
-  -hls_segment_filename 'seg_%03d.ts' index.m3u8
-
-# 4. Upload index.m3u8 + every seg_*.ts here. Paste $KEY_HEX into the form below.`}</pre>
+# It produces:
+#   out/master.m3u8           ← top-level master playlist
+#   out/360p/index.m3u8 + seg_*.ts
+#   out/720p/index.m3u8 + seg_*.ts
+#   out/1080p/index.m3u8 + seg_*.ts
+#   out/key.hex               ← 32-char hex (use in form below)
+#
+# Then in the file picker below, choose the "out" folder.
+# The browser will preserve the 360p/, 720p/, 1080p/ subdirectories.`}</pre>
       </div>
 
       <form onSubmit={submit} className="rounded-xl border border-neutral-800 p-4 grid gap-3">
@@ -122,16 +135,35 @@ ffmpeg -i source.mp4 \\
           Mark as preview (no enrollment required)
         </label>
 
-        <div className="border-2 border-dashed border-neutral-700 rounded p-4">
-          <input
-            type="file" multiple required
-            onChange={(e) => setFiles(e.target.files)}
-            accept=".m3u8,.ts"
-            className="text-sm"
-          />
-          <p className="text-xs opacity-60 mt-2">
-            Select all .m3u8 + .ts files for this lesson at once.
-          </p>
+        <div className="border-2 border-dashed border-neutral-700 rounded p-4 space-y-3">
+          <div>
+            <p className="text-sm font-medium mb-1">Folder upload (multi-bitrate)</p>
+            <input
+              type="file"
+              // @ts-expect-error – non-standard but widely supported
+              webkitdirectory=""
+              directory=""
+              multiple
+              onChange={(e) => e.target.files && setEntries(entriesFrom(e.target.files))}
+              className="text-sm"
+            />
+          </div>
+          <div className="text-xs opacity-50 text-center">— or —</div>
+          <div>
+            <p className="text-sm font-medium mb-1">Single-bitrate (flat file list)</p>
+            <input
+              type="file" multiple
+              accept=".m3u8,.ts"
+              onChange={(e) => e.target.files && setEntries(entriesFrom(e.target.files))}
+              className="text-sm"
+            />
+          </div>
+          {entries.length > 0 && (
+            <p className="text-xs opacity-70">
+              {entries.length} files selected{" "}
+              ({new Set(entries.map((e) => e.relpath || ".")).size} subdirectories)
+            </p>
+          )}
         </div>
 
         {error && <p className="text-sm text-red-400">{error}</p>}

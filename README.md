@@ -48,11 +48,7 @@ docker compose exec api python -m scripts.make_admin you@example.com
 
 ## Monitoring (Prometheus + Grafana)
 
-- API exposes `/metrics` (FastAPI request rate, latency, status codes)
-- Prometheus scrapes `api:8000/metrics` every 15s
-- Grafana auto-provisions a "Course Platform — API" dashboard at first boot
-- Login: `admin` / `${GRAFANA_PASSWORD}` from `.env`
-- In production, expose Grafana behind a separate subdomain (`grafana.example.com` in `Caddyfile`) and IP-allowlist it
+See "Monitoring & alerting" section below for the full setup.
 
 ## Production deploy (Hetzner)
 
@@ -68,25 +64,48 @@ docker compose exec api python -m scripts.make_admin you@example.com
 ## Video ingest workflow
 
 ```bash
-# Encode HLS with AES-128 outside this stack:
-KEY=$(openssl rand -hex 16)
-echo -n "$KEY" | xxd -r -p > video.key
-cat > key_info.txt <<EOF
-https://api.example.com/api/v1/videos/PLACEHOLDER_VIDEO_ID/key
-$(pwd)/video.key
-EOF
+# Multi-bitrate (recommended): use the helper script
+backend/scripts/encode_multibitrate.sh source.mp4 ./out https://api.example.com
+# Produces ./out/master.m3u8 + 360p/ + 720p/ + 1080p/ + key.hex
 
-ffmpeg -i source.mp4 \
-  -hls_time 6 -hls_key_info_file key_info.txt -hls_playlist_type vod \
-  -hls_segment_filename 'seg_%03d.ts' index.m3u8
-
-# Upload .m3u8 + .ts segments to R2 under courses/<course>/lessons/<id>/
-# Then register the key in DB:
-docker compose exec api python -m scripts.ingest_video \
-  --r2-key courses/intro/lessons/01/index.m3u8 \
-  --aes-key-hex "$KEY" \
-  --course-slug intro --lesson-title "Welcome" --position 1
+# Then upload via the admin UI at /admin/upload (folder picker preserves subdirs)
 ```
+
+For single-bitrate, encode any HLS-AES asset with ffmpeg directly and upload the
+flat file list — see the help text on `/admin/upload`.
+
+## Cold backup to S3 Glacier Deep Archive
+
+Add AWS credentials to `.env` (`AWS_BACKUP_BUCKET`, `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`). The Ofelia container runs `backup_to_glacier` daily at
+03:17 UTC, copying:
+
+- Every R2 object → `s3://<bucket>/media/<key>` (incremental — skips already-backed-up keys)
+- `pg_dump` of the entire DB → `s3://<bucket>/db/<timestamp>.sql.gz`
+
+Run manually:
+```bash
+docker compose exec api python -m scripts.backup_to_glacier
+```
+
+**Restoring** from Deep Archive takes 12–48h. Use AWS Console or `aws s3api restore-object`
+on the specific keys you need; do not put restore on the hot path.
+
+The DB dump contains `video_keys` (encrypted with the master KEK). **Without it,
+R2 segments are useless — losing the DB is losing every video.** Treat the
+backup AWS account as a separate trust boundary: PutObject only, no Delete.
+
+## Monitoring & alerting (Prometheus + Grafana)
+
+- API exposes `/metrics` (request rate, latency, status codes)
+- Prometheus scrapes `api:8000/metrics` every 15s, retains 30 days
+- Grafana auto-provisions:
+  - Datasource (`Prometheus`)
+  - Dashboard (`Course Platform — API`)
+  - **Alert rules** (4): API down, 5xx rate, key denial spike, p95 latency
+  - Contact point: webhook (set `ALERT_WEBHOOK_URL` in `.env` — Discord/Slack/generic)
+- Login: `admin` / `${GRAFANA_PASSWORD}`. Expose behind a separate subdomain in production
+  and IP-allowlist it.
 
 ## Threat model — what this prevents and what it doesn't
 

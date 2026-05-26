@@ -156,15 +156,21 @@ def create_upload(_: User = Depends(current_admin)):
 async def upload_file(
     upload_id: str,
     filename: str = Form(...),
+    relpath: str = Form(""),
     file: UploadFile = File(...),
     _: User = Depends(current_admin),
 ):
+    # filename is just the leaf; relpath is optional subdirectory like "720p"
     if "/" in filename or ".." in filename:
         raise HTTPException(400, "invalid filename")
+    if ".." in relpath or relpath.startswith("/"):
+        raise HTTPException(400, "invalid relpath")
     upload_dir = os.path.join(_BUFFER_ROOT, upload_id)
     if not os.path.isdir(upload_dir):
         raise HTTPException(404, "upload not found")
-    dest = os.path.join(upload_dir, filename)
+    target_dir = os.path.join(upload_dir, relpath) if relpath else upload_dir
+    os.makedirs(target_dir, exist_ok=True)
+    dest = os.path.join(target_dir, filename)
     with open(dest, "wb") as f:
         while chunk := await file.read(1024 * 1024):
             f.write(chunk)
@@ -195,24 +201,37 @@ def finalize_upload(
     upload_dir = os.path.join(_BUFFER_ROOT, body.upload_id)
     if not os.path.isdir(upload_dir):
         raise HTTPException(404, "upload not found")
-    files = sorted(os.listdir(upload_dir))
-    if body.manifest_filename not in files:
-        raise HTTPException(422, f"{body.manifest_filename} missing from upload")
+
+    # Walk the buffer recursively so multi-bitrate trees (e.g. 360p/, 720p/) are preserved.
+    rel_files: list[str] = []
+    for root, _dirs, fnames in os.walk(upload_dir):
+        for fname in fnames:
+            full = os.path.join(root, fname)
+            rel = os.path.relpath(full, upload_dir).replace(os.sep, "/")
+            rel_files.append(rel)
+    rel_files.sort()
+    if body.manifest_filename not in rel_files:
+        raise HTTPException(422, f"{body.manifest_filename} missing from upload (top-level)")
 
     course = db.scalar(select(Course).where(Course.slug == body.course_slug))
     if not course:
         raise HTTPException(404, "course not found — create it first")
 
-    # Push every file to R2 under courses/<slug>/lessons/<uuid>/
+    # Push every file to R2 under courses/<slug>/lessons/<uuid>/<rel>
     video_id = uuid.uuid4()
     r2_prefix = f"courses/{body.course_slug}/lessons/{video_id}"
     manifest_key = f"{r2_prefix}/{body.manifest_filename}"
 
-    for fname in files:
-        with open(os.path.join(upload_dir, fname), "rb") as f:
+    for rel in rel_files:
+        with open(os.path.join(upload_dir, rel), "rb") as f:
             data = f.read()
-        ctype = "application/vnd.apple.mpegurl" if fname.endswith(".m3u8") else "video/mp2t"
-        upload_bytes(f"{r2_prefix}/{fname}", data, ctype)
+        if rel.endswith(".m3u8"):
+            ctype = "application/vnd.apple.mpegurl"
+        elif rel.endswith(".ts"):
+            ctype = "video/mp2t"
+        else:
+            ctype = "application/octet-stream"
+        upload_bytes(f"{r2_prefix}/{rel}", data, ctype)
 
     # Register in DB
     video = Video(id=video_id, r2_manifest_key=manifest_key, duration_sec=body.duration_sec)
@@ -234,16 +253,9 @@ def finalize_upload(
     ))
     db.commit()
 
-    # Cleanup buffer
-    for fname in files:
-        try:
-            os.remove(os.path.join(upload_dir, fname))
-        except OSError:
-            pass
-    try:
-        os.rmdir(upload_dir)
-    except OSError:
-        pass
+    # Cleanup buffer (recursive)
+    import shutil
+    shutil.rmtree(upload_dir, ignore_errors=True)
 
     return {
         "video_id": str(video.id),

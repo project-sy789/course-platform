@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     R2_ACCESS_KEY_ID: str = ""
     R2_SECRET_ACCESS_KEY: str = ""
 
+    # AWS backup target (S3 Glacier Deep Archive). Optional.
+    AWS_REGION: str = "ap-southeast-1"
+    AWS_BACKUP_BUCKET: str = ""
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_BACKUP_STORAGE_CLASS: str = "DEEP_ARCHIVE"
+
     CORS_ORIGINS: str = "https://app.example.com"
 
     class Config:

@@ -1,0 +1,15 @@
+apiVersion: 1
+
+# Contact points are where alerts get delivered.
+# The webhook URL is read from ALERT_WEBHOOK_URL env var; if empty, this contact
+# point still exists but won't reach anyone — set the env var in .env to enable.
+contactPoints:
+  - orgId: 1
+    name: default-webhook
+    receivers:
+      - uid: default-webhook-recv
+        type: webhook
+        settings:
+          url: $ALERT_WEBHOOK_URL
+          httpMethod: POST
+        disableResolveMessage: false

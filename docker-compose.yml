@@ -35,6 +35,20 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    labels:
+      # Daily cold backup at 03:17 UTC (offset to avoid the global :00 hammer)
+      ofelia.enabled: "true"
+      ofelia.job-exec.backup.schedule: "17 17 3 * * *"
+      ofelia.job-exec.backup.command: "python -m scripts.backup_to_glacier"
+
+  ofelia:
+    image: mcuadros/ofelia:0.3.13
+    depends_on:
+      - api
+    command: daemon --docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
 
   caddy:
     image: caddy:2
@@ -71,6 +85,8 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Make $VAR placeholders in provisioning YAML resolve to env vars at startup.
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL}
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
