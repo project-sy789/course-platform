@@ -1,0 +1,48 @@
+name = "course-platform-edge"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+workers_dev = false
+
+# Public hostname that fronts the Hetzner origin. Cloudflare DNS for
+# api.example.com points to this worker; the worker forwards (most) traffic
+# to the origin set in ORIGIN_HOST below.
+routes = [
+  { pattern = "api.example.com/*", zone_name = "example.com" }
+]
+
+# The Hetzner origin. Set to the *direct* IP / hostname Cloudflare should
+# proxy to — NOT the public hostname, or you'll loop through the worker.
+# In production this is usually a Cloudflare Tunnel hostname or a
+# `*.origin.example.com` record that bypasses the worker route.
+[vars]
+ORIGIN_HOST = "origin.example.com"
+# Per-IP edge rate limits (sliding window — see src/ratelimit.ts).
+# These run BEFORE the request reaches Hetzner, so a botnet hammering /key
+# can't exhaust origin Redis.
+RL_KEY_PER_MIN = "30"        # key endpoint
+RL_MANIFEST_PER_MIN = "20"   # manifest + sub-manifest
+RL_DEFAULT_PER_MIN = "300"   # everything else (catch-all)
+# Cookie minted on a successful manifest fetch — segment URLs validate it
+# at the edge. Lifetime is short; the player refreshes via /playback-session.
+MEDIA_COOKIE_TTL_SEC = "180"
+MEDIA_COOKIE_NAME = "__Host-cp-media"
+
+# HMAC_SECRET is a Worker secret — set with `wrangler secret put HMAC_SECRET`.
+# It must NOT be checked in. Rotation: deploy a Worker that accepts both old
+# and new for one TTL window, then remove the old.
+
+# KV namespace used for the sliding-window rate limiter. Create with:
+#   wrangler kv namespace create EDGE_RL
+# Then paste the id below.
+[[kv_namespaces]]
+binding = "EDGE_RL"
+id = "REPLACE_WITH_KV_ID"
+
+# Optional R2 binding. Only needed if you decide to route HLS segments
+# through the worker (instead of the origin's presigned URLs). Off by default.
+# [[r2_buckets]]
+# binding = "MEDIA"
+# bucket_name = "course-platform-media"
+
+[observability]
+enabled = true

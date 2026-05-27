@@ -187,6 +187,9 @@ async def proxied_manifest(
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, private",
             "X-Content-Type-Options": "nosniff",
+            # Read + stripped by the Cloudflare edge worker to mint a
+            # short-lived HMAC-signed media cookie. Never reaches the browser.
+            "X-Cp-Uid": str(sess["uid"]),
         },
     )
 
@@ -240,6 +243,7 @@ async def proxied_sub_manifest(
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, private",
             "X-Content-Type-Options": "nosniff",
+            "X-Cp-Uid": str(sess["uid"]),
         },
     )
 
