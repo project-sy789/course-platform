@@ -1,0 +1,50 @@
+name: course-platform
+
+# Blue stack — the second copy of the stateless tier (api + worker).
+# Run with:
+#   COLOR=blue docker compose -f docker-compose.yml -f deploy/docker-compose.blue.yml up -d api-blue worker-blue
+#
+# The base docker-compose.yml owns the SHARED services (db, redis, caddy,
+# mailserver, monitoring). Blue and green only add their own api+worker
+# containers, sharing the upload buffer volume so an upload in flight on
+# the old color can finalize after a swap.
+
+services:
+  api-blue:
+    build: ../backend
+    env_file: ../.env
+    environment:
+      DEPLOY_COLOR: blue
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      - upload_buffer:/tmp/course-uploads
+    labels:
+      ofelia.enabled: "false"  # backups run from the active color only; see deploy.sh
+
+  worker-blue:
+    build: ../backend
+    env_file: ../.env
+    environment:
+      DEPLOY_COLOR: blue
+    entrypoint: []
+    command: ["arq", "app.worker.WorkerSettings"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - upload_buffer:/tmp/course-uploads
+    restart: unless-stopped
+
+volumes:
+  upload_buffer:
+    external: true
+    name: course-platform_upload_buffer

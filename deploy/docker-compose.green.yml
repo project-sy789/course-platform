@@ -1,0 +1,40 @@
+name: course-platform
+
+# Green stack — second copy of api + worker. Mirrors blue.
+services:
+  api-green:
+    build: ../backend
+    env_file: ../.env
+    environment:
+      DEPLOY_COLOR: green
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      - upload_buffer:/tmp/course-uploads
+
+  worker-green:
+    build: ../backend
+    env_file: ../.env
+    environment:
+      DEPLOY_COLOR: green
+    entrypoint: []
+    command: ["arq", "app.worker.WorkerSettings"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - upload_buffer:/tmp/course-uploads
+    restart: unless-stopped
+
+volumes:
+  upload_buffer:
+    external: true
+    name: course-platform_upload_buffer

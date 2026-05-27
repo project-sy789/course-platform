@@ -1,0 +1,137 @@
+name: course-platform
+
+# Production "shared" stack — stateful + cross-cutting services that
+# DON'T do blue-green. They run once; both colors talk to them.
+#
+# Compose project name is intentionally `course-platform` so the volumes
+# from the dev-mode root docker-compose.yml carry over (a Hetzner deploy
+# is usually upgrading an existing single-stack install).
+#
+# Bring up:
+#   docker compose -f deploy/docker-compose.shared.yml up -d
+#
+# This file is the BASE for prod. Layer the blue OR green file on top
+# (and only one at a time during steady state — both during a deploy).
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: course
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: course
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U course"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  mailserver:
+    image: boky/postfix:v4.0.0
+    environment:
+      ALLOWED_SENDER_DOMAINS: ${MAIL_DOMAIN}
+      HOSTNAME: ${MAIL_HOSTNAME}
+      RELAYHOST: ${MAIL_RELAYHOST:-}
+      RELAYHOST_USERNAME: ${MAIL_RELAY_USER:-}
+      RELAYHOST_PASSWORD: ${MAIL_RELAY_PASSWORD:-}
+      POSTFIX_message_size_limit: "26214400"
+    volumes:
+      - mail_data:/var/spool/postfix
+      - ../mail/dkim:/etc/opendkim/keys:ro
+    expose:
+      - "587"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Prod Caddyfile reads the active-upstream snippet that deploy.sh
+      # rewrites on every flip. We re-template, then `caddy reload`.
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - ./caddy.active-upstream:/etc/caddy/active-upstream:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    restart: unless-stopped
+    expose:
+      - "9090"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL}
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+    expose:
+      - "3000"
+
+  loki:
+    image: grafana/loki:3.2.0
+    command: ["-config.file=/etc/loki/config.yml"]
+    volumes:
+      - ../monitoring/loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+    expose:
+      - "3100"
+
+  promtail:
+    image: grafana/promtail:3.2.0
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ../monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  ofelia:
+    image: mcuadros/ofelia:0.3.13
+    command: daemon --docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+volumes:
+  pgdata: {}
+  caddy_data: {}
+  caddy_config: {}
+  prometheus_data: {}
+  grafana_data: {}
+  loki_data: {}
+  upload_buffer: {}
+  mail_data: {}
