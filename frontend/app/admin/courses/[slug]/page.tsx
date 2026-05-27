@@ -3,7 +3,7 @@ import { useEffect, useState, Fragment } from "react";
 import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 import { adminApi } from "@/lib/admin";
-import { formatTHB } from "@/lib/format";
+import { formatTHB, formatBytes } from "@/lib/format";
 import {
   Button, ErrorNote, Field, Input, Loading, Page, PageTitle, Pill, Section,
   TD, TH, THead, TR, Table,
@@ -34,6 +34,14 @@ type EditForm = {
   price_cents: number;
 };
 
+type Material = {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  created_at?: string;
+};
+
 export default function AdminCourseDetailPage({ params }: { params: { slug: string } }) {
   const [course, setCourse] = useState<CourseDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +50,11 @@ export default function AdminCourseDetailPage({ params }: { params: { slug: stri
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  const [matsForLesson, setMatsForLesson] = useState<string | null>(null);
+  const [mats, setMats] = useState<Material[]>([]);
+  const [matsBusy, setMatsBusy] = useState(false);
+  const [matsError, setMatsError] = useState<string | null>(null);
 
   const reload = () =>
     apiFetch<CourseDetail>(`/api/v1/courses/${params.slug}`)
@@ -99,6 +112,44 @@ export default function AdminCourseDetailPage({ params }: { params: { slug: stri
     try {
       await adminApi.deleteLesson(l.id);
       await reload();
+    } catch (e: any) { window.alert(e.message); }
+  }
+
+  async function openMaterials(lessonId: string) {
+    setMatsForLesson(lessonId);
+    setMatsError(null);
+    setMats([]);
+    try {
+      const list = await adminApi.listMaterials(lessonId);
+      setMats(list);
+    } catch (e: any) { setMatsError(e.message); }
+  }
+
+  function closeMaterials() {
+    setMatsForLesson(null);
+    setMats([]);
+    setMatsError(null);
+  }
+
+  async function uploadMaterial(lessonId: string, files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setMatsBusy(true); setMatsError(null);
+    try {
+      for (const f of Array.from(files)) {
+        await adminApi.uploadMaterial(lessonId, f);
+      }
+      const list = await adminApi.listMaterials(lessonId);
+      setMats(list);
+    } catch (e: any) { setMatsError(e.message); }
+    finally { setMatsBusy(false); }
+  }
+
+  async function removeMaterial(lessonId: string, materialId: string, filename: string) {
+    if (!window.confirm(`ลบเอกสาร "${filename}" ?`)) return;
+    try {
+      await adminApi.deleteMaterial(materialId);
+      const list = await adminApi.listMaterials(lessonId);
+      setMats(list);
     } catch (e: any) { window.alert(e.message); }
   }
 
@@ -183,6 +234,12 @@ export default function AdminCourseDetailPage({ params }: { params: { slug: stri
                             aria-label="เลื่อนลง"
                             className="font-mono text-[14px] text-muted hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed"
                           >↓</button>
+                          <button
+                            onClick={() => matsForLesson === l.id ? closeMaterials() : openMaterials(l.id)}
+                            className="text-[12px] text-ink hover:text-oxblood underline underline-offset-4 decoration-1"
+                          >
+                            เอกสาร
+                          </button>
                           <button onClick={() => startEdit(l)}
                             className="text-[12px] text-ink hover:text-oxblood underline underline-offset-4 decoration-1">
                             แก้ไข
@@ -230,6 +287,68 @@ export default function AdminCourseDetailPage({ params }: { params: { slug: stri
                             ยกเลิก
                           </button>
                         </div>
+                      </td>
+                    </tr>
+                  )}
+                  {matsForLesson === l.id && (
+                    <tr className="bg-cream/40">
+                      <td colSpan={5} className="px-4 py-5">
+                        <div className="flex items-baseline gap-4 mb-3">
+                          <h3 className="font-display text-[16px]">เอกสารประกอบบทเรียน</h3>
+                          <span className="grow border-t border-rule/40" />
+                          <span className="font-mono text-[11px] text-muted">
+                            {mats.length.toString().padStart(2, "0")} ไฟล์
+                          </span>
+                          <button onClick={closeMaterials}
+                            className="text-[12px] text-muted hover:text-ink underline underline-offset-4 decoration-1">
+                            ปิด
+                          </button>
+                        </div>
+
+                        {mats.length === 0 ? (
+                          <p className="text-[13px] text-muted italic mb-4">ยังไม่มีเอกสารแนบในบทนี้</p>
+                        ) : (
+                          <ul className="border-t border-rule mb-4">
+                            {mats.map((m) => (
+                              <li key={m.id} className="border-b border-rule grid grid-cols-[1fr_auto_auto] gap-4 py-2 items-baseline">
+                                <span className="font-display text-[14px]">{m.filename}</span>
+                                <span className="font-mono text-[11px] text-muted">
+                                  {m.content_type} · {formatBytes(m.size_bytes)}
+                                </span>
+                                <button
+                                  onClick={() => removeMaterial(l.id, m.id, m.filename)}
+                                  className="text-[12px] text-oxblood hover:underline underline-offset-4 decoration-1"
+                                >
+                                  ลบ
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        <label className="inline-flex items-center gap-3 cursor-pointer">
+                          <span className="border-2 border-ink px-4 py-2 text-[12px] uppercase tracking-[0.18em] hover:bg-ink hover:text-paper transition">
+                            {matsBusy ? "กำลังอัปโหลด…" : "เลือกไฟล์อัปโหลด →"}
+                          </span>
+                          <input
+                            type="file" multiple
+                            accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,image/*"
+                            disabled={matsBusy}
+                            onChange={(e) => {
+                              uploadMaterial(l.id, e.target.files);
+                              e.target.value = "";
+                            }}
+                            className="sr-only"
+                          />
+                          <span className="text-[12px] text-muted italic">
+                            ขนาดไม่เกิน ๕๐ MB ต่อไฟล์ — รองรับ PDF, Office, รูปภาพ
+                          </span>
+                        </label>
+                        <ErrorNote>{matsError}</ErrorNote>
+                        <p className="mt-3 text-[12px] italic text-muted leading-snug max-w-prose">
+                          ทุกการดาวน์โหลดของผู้ใช้จะฝังรหัสนิติวิทยาในไฟล์
+                          (เช่น metadata ของ PDF) เพื่อระบุตัวเจ้าของบัญชีหากมีการเผยแพร่ต่อ
+                        </p>
                       </td>
                     </tr>
                   )}

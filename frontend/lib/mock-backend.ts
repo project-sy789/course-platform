@@ -59,12 +59,22 @@ type MockProgress = {
 	updated_at: string;
 };
 
+type MockMaterial = {
+	id: string;
+	lesson_id: string;
+	filename: string;
+	content_type: string;
+	size_bytes: number;
+	created_at: string;
+};
+
 type MockState = {
 	currentUserId: string | null;
 	users: MockUser[];
 	courses: MockCourse[];
 	slips: MockSlip[];
 	progress: MockProgress[];
+	materials: MockMaterial[];
 	tax_info: {
 		tax_name: string | null;
 		tax_id: string | null;
@@ -244,6 +254,10 @@ function seed(): MockState {
 			tax_branch: null,
 		},
 		progress: [],
+		materials: [
+			{ id: "mat-seed-1", lesson_id: "l-1a", filename: "เอกสารบทที่ ๑.pdf", content_type: "application/pdf", size_bytes: 482 * 1024, created_at: days(30) },
+			{ id: "mat-seed-2", lesson_id: "l-1a", filename: "บรรณานุกรม.pdf", content_type: "application/pdf", size_bytes: 96 * 1024, created_at: days(30) },
+		],
 	};
 }
 
@@ -256,6 +270,7 @@ function load(): MockState {
 		// shape-check the few top-level keys; if anything's off, reseed.
 		if (!parsed.users || !parsed.courses || !parsed.slips) return seed();
 		if (!parsed.progress) parsed.progress = [];
+		if (!parsed.materials) parsed.materials = [];
 		return parsed;
 	} catch {
 		return seed();
@@ -353,20 +368,13 @@ export async function handle(
 			const lessonId = m[1]!;
 			const wantMats = !!m[2];
 			if (wantMats) {
-				return ok([
-					{
-						id: "mat-1",
-						filename: "เอกสารบทที่ ๑.pdf",
-						content_type: "application/pdf",
-						size_bytes: 482 * 1024,
-					},
-					{
-						id: "mat-2",
-						filename: "บรรณานุกรม.pdf",
-						content_type: "application/pdf",
-						size_bytes: 96 * 1024,
-					},
-				]);
+				return ok(
+					state.materials
+						.filter((mm) => mm.lesson_id === lessonId)
+						.map(({ id, filename, content_type, size_bytes }) => ({
+							id, filename, content_type, size_bytes,
+						})),
+				);
 			}
 			for (const c of state.courses) {
 				const l = c.lessons.find((ll) => ll.id === lessonId);
@@ -661,6 +669,58 @@ export async function handle(
 					}
 					lesson.position = b.position;
 				}
+				save(state);
+				return ok({ ok: true });
+			}
+		}
+		{
+			const m = /^\/api\/v1\/admin\/lessons\/([^/]+)\/materials$/.exec(path);
+			if (m && method === "GET") {
+				return ok(
+					state.materials
+						.filter((mm) => mm.lesson_id === m[1])
+						.map((mm) => ({
+							id: mm.id,
+							filename: mm.filename,
+							content_type: mm.content_type,
+							size_bytes: mm.size_bytes,
+							created_at: mm.created_at,
+						})),
+				);
+			}
+			if (m && method === "POST") {
+				const lessonId = m[1]!;
+				const exists = state.courses.some((c) => c.lessons.some((l) => l.id === lessonId));
+				if (!exists) return err(404, "ไม่พบบทเรียน");
+				const body = init?.body;
+				let filename = "unnamed";
+				let ctype = "application/octet-stream";
+				let size = 0;
+				if (body instanceof FormData) {
+					const f = body.get("file");
+					if (f && typeof (f as any) === "object" && "name" in (f as any)) {
+						const file = f as File;
+						filename = file.name.replace(/[\\/]/g, "_");
+						ctype = file.type || "application/octet-stream";
+						size = file.size;
+					}
+				}
+				const id = `mat-${Date.now()}`;
+				const mat: MockMaterial = {
+					id, lesson_id: lessonId, filename, content_type: ctype,
+					size_bytes: size, created_at: new Date().toISOString(),
+				};
+				state.materials.push(mat);
+				save(state);
+				return ok({ id, filename, size_bytes: size, content_type: ctype }, 201);
+			}
+		}
+		{
+			const m = /^\/api\/v1\/admin\/materials\/([^/]+)$/.exec(path);
+			if (m && method === "DELETE") {
+				const idx = state.materials.findIndex((x) => x.id === m[1]);
+				if (idx < 0) return err(404, "ไม่พบเอกสาร");
+				state.materials.splice(idx, 1);
 				save(state);
 				return ok({ ok: true });
 			}

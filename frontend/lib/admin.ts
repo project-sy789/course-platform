@@ -69,6 +69,28 @@ export const adminApi = {
     apiFetch<{ ok: boolean }>(`/api/v1/admin/lessons/${lessonId}`, {
       method: "DELETE",
     }),
+  listMaterials: (lessonId: string) =>
+    apiFetch<{ id: string; filename: string; content_type: string; size_bytes: number; created_at: string }[]>(
+      `/api/v1/admin/lessons/${lessonId}/materials`,
+    ),
+  uploadMaterial: async (lessonId: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/api/v1/admin/lessons/${lessonId}/materials`,
+      { method: "POST", credentials: "include", body: fd },
+    );
+    if (!res.ok) {
+      let detail = `${res.status}`;
+      try { detail = (await res.json()).detail ?? detail; } catch { /* ignore */ }
+      throw new Error(`อัปโหลด ${file.name} ไม่สำเร็จ: ${detail}`);
+    }
+    return res.json() as Promise<{ id: string; filename: string; size_bytes: number; content_type: string }>;
+  },
+  deleteMaterial: (materialId: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/admin/materials/${materialId}`, {
+      method: "DELETE",
+    }),
   grantEnrollment: (user_email: string, course_slug: string) =>
     apiFetch<{ id: string; status: string }>("/api/v1/admin/enrollments", {
       method: "POST", body: JSON.stringify({ user_email, course_slug }),
