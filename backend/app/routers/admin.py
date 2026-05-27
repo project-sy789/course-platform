@@ -181,6 +181,9 @@ class CourseIn(BaseModel):
     price_cents: int = 0
     # None = lifetime (ขายขาด). Positive int = days of access from enrollment.
     access_duration_days: Optional[int] = None
+    # Opt-in pixel watermark (canvas-rendered). Heavy on CPU/battery —
+    # only flip on for high-value courses.
+    pixel_watermark: bool = False
 
 
 @router.post("/courses", status_code=201)
@@ -207,6 +210,7 @@ def admin_list_courses(
             "id": str(c.id), "slug": c.slug, "title": c.title,
             "description": c.description, "price_cents": c.price_cents,
             "access_duration_days": c.access_duration_days,
+            "pixel_watermark": c.pixel_watermark,
             "created_at": c.created_at.isoformat(),
         } for c in rows
     ]
@@ -219,6 +223,7 @@ class CoursePatch(BaseModel):
     # Use Pydantic's explicit-None semantics — caller can clear duration by
     # passing null to make a course lifetime again.
     access_duration_days: Optional[int] = None
+    pixel_watermark: Optional[bool] = None
 
 
 @router.patch("/courses/{slug}")

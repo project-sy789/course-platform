@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import (
     String, Text, Integer, Boolean, ForeignKey, BigInteger,
-    LargeBinary, DateTime, UniqueConstraint, Index, func,
+    LargeBinary, DateTime, UniqueConstraint, Index, func, false,
 )
 from sqlalchemy.dialects.postgresql import UUID, INET, CITEXT
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -39,6 +39,14 @@ class Course(Base):
     # Time-limited access. NULL = lifetime (ขายขาด). Otherwise enrollments
     # created for this course expire at created_at + access_duration_days.
     access_duration_days: Mapped[int | None] = mapped_column(Integer)
+    # Opt-in: render video frames to a <canvas> with the watermark drawn
+    # directly into the pixel buffer instead of overlaying an absolutely-
+    # positioned canvas. Survives screen recording / OBS but costs ~30%
+    # more CPU and disables hardware video decode. Only worth it for
+    # high-value courses; default off.
+    pixel_watermark: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

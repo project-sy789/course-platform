@@ -37,6 +37,7 @@ export const adminApi = {
     description?: string;
     price_cents?: number;
     access_duration_days?: number | null;
+    pixel_watermark?: boolean;
   }) =>
     apiFetch<{ id: string }>("/api/v1/admin/courses", {
       method: "POST", body: JSON.stringify(body),

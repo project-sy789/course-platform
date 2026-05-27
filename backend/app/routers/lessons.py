@@ -37,6 +37,7 @@ def get_course(slug: str, db: Session = Depends(get_session)):
         "description": course.description,
         "price_cents": course.price_cents,
         "access_duration_days": course.access_duration_days,
+        "pixel_watermark": course.pixel_watermark,
         "lessons": [
             {"id": str(l.id), "title": l.title, "position": l.position,
              "is_preview": l.is_preview, "price_cents": l.price_cents}

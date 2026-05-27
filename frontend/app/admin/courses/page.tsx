@@ -11,6 +11,7 @@ type Course = {
   description?: string;
   price_cents: number;
   access_duration_days?: number | null;
+  pixel_watermark?: boolean;
 };
 
 export default function AdminCoursesPage() {
@@ -19,6 +20,7 @@ export default function AdminCoursesPage() {
     slug: "", title: "", description: "", price_cents: 0,
     // empty string == ตลอดชีพ; positive number == limited days
     access_duration_days: "" as string,
+    pixel_watermark: false,
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +41,12 @@ export default function AdminCoursesPage() {
         description: form.description || undefined,
         price_cents: Number(form.price_cents) || 0,
         access_duration_days: dur === "" ? null : Number(dur),
+        pixel_watermark: form.pixel_watermark,
       });
-      setForm({ slug: "", title: "", description: "", price_cents: 0, access_duration_days: "" });
+      setForm({
+        slug: "", title: "", description: "", price_cents: 0,
+        access_duration_days: "", pixel_watermark: false,
+      });
       await reload();
     } catch (e: any) {
       setError(e.message);
@@ -84,6 +90,20 @@ export default function AdminCoursesPage() {
           onChange={(e) => setForm({ ...form, access_duration_days: e.target.value })}
           className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
         />
+        <label className="flex items-start gap-2 text-sm py-1">
+          <input
+            type="checkbox" checked={form.pixel_watermark}
+            onChange={(e) => setForm({ ...form, pixel_watermark: e.target.checked })}
+            className="mt-1"
+          />
+          <span>
+            ฝังลายน้ำลงในพิกเซลวิดีโอ (Pixel Watermark)
+            <span className="block text-xs opacity-50 mt-0.5">
+              ลายน้ำติดไปกับการบันทึกหน้าจอด้วย แต่กิน CPU/แบตมากกว่า ~30%
+              และปิดการเร่งฮาร์ดแวร์ — แนะนำเฉพาะคอร์สราคาสูง
+            </span>
+          </span>
+        </label>
         {error && <p className="text-sm text-red-400">{error}</p>}
         <button disabled={busy} className="rounded bg-white text-black font-medium py-2 disabled:opacity-50">
           {busy ? "…" : "สร้างคอร์ส"}
@@ -98,6 +118,7 @@ export default function AdminCoursesPage() {
               <th className="p-3">ชื่อคอร์ส</th>
               <th className="p-3">ราคา</th>
               <th className="p-3">ระยะเวลาเข้าถึง</th>
+              <th className="p-3">ลายน้ำพิกเซล</th>
             </tr>
           </thead>
           <tbody>
@@ -111,10 +132,13 @@ export default function AdminCoursesPage() {
                 <td className="p-3">
                   {c.access_duration_days == null ? "ตลอดชีพ" : `${c.access_duration_days} วัน`}
                 </td>
+                <td className="p-3">
+                  {c.pixel_watermark ? <span className="text-emerald-400">เปิด</span> : <span className="opacity-40">ปิด</span>}
+                </td>
               </tr>
             ))}
             {courses.length === 0 && (
-              <tr><td colSpan={4} className="p-3 opacity-50 text-center">ยังไม่มีคอร์ส</td></tr>
+              <tr><td colSpan={5} className="p-3 opacity-50 text-center">ยังไม่มีคอร์ส</td></tr>
             )}
           </tbody>
         </table>

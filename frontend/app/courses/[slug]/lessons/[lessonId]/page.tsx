@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import SecurePlayer from "@/components/SecurePlayer";
+import PixelWatermarkPlayer from "@/components/PixelWatermarkPlayer";
 import WatermarkOverlay from "@/components/WatermarkOverlay";
 import WatermarkSentinel from "@/components/WatermarkSentinel";
 import DevToolsGuard from "@/components/DevToolsGuard";
@@ -10,6 +11,7 @@ import { formatBytes } from "@/lib/format";
 
 type Me = { id: string; email: string; is_active: boolean };
 type Lesson = { id: string; title: string; position: number; video_id: string; course_id: string };
+type CourseSummary = { pixel_watermark: boolean };
 type Material = {
   id: string;
   filename: string;
@@ -25,6 +27,7 @@ export default function LessonPage({
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [course, setCourse] = useState<CourseSummary | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [paused, setPaused] = useState(false);
   const [tamperReason, setTamperReason] = useState<string | null>(null);
@@ -46,7 +49,12 @@ export default function LessonPage({
     apiFetch<Material[]>(`/api/v1/lessons/${params.lessonId}/materials`)
       .then(setMaterials)
       .catch(() => setMaterials([]));
-  }, [params.lessonId]);
+    // Course summary tells us which player flavour to mount. Cheap to fetch
+    // (the public course endpoint is small + cacheable).
+    apiFetch<CourseSummary>(`/api/v1/courses/${params.slug}`)
+      .then(setCourse)
+      .catch(() => setCourse({ pixel_watermark: false }));
+  }, [params.lessonId, params.slug]);
 
   if (error) return <main className="p-8 text-red-400">เกิดข้อผิดพลาด: {error}</main>;
   if (!me || !lesson) return <main className="p-8 opacity-60">กำลังโหลด…</main>;
@@ -64,8 +72,26 @@ export default function LessonPage({
       <div className="max-w-5xl mx-auto p-6">
         <h1 className="text-xl font-semibold mb-4">{lesson.title}</h1>
         <div className="relative aspect-video bg-black rounded-xl overflow-hidden select-none">
-          {!paused && <SecurePlayer videoId={lesson.video_id} lessonId={lesson.id} />}
-          <WatermarkOverlay userEmail={me.email} userId={me.id} />
+          {!paused && (
+            course?.pixel_watermark ? (
+              // High-value course: the watermark is baked into each video
+              // frame's pixels so screen recording captures it too. No
+              // overlay element to defeat with display:none.
+              <PixelWatermarkPlayer
+                videoId={lesson.video_id}
+                lessonId={lesson.id}
+                userEmail={me.email}
+                userId={me.id}
+              />
+            ) : (
+              <SecurePlayer videoId={lesson.video_id} lessonId={lesson.id} />
+            )
+          )}
+          {/* Overlay watermark only when the pixel-baked variant isn't already
+              drawing one. Otherwise we'd double-stamp. */}
+          {!course?.pixel_watermark && (
+            <WatermarkOverlay userEmail={me.email} userId={me.id} />
+          )}
           {paused && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 text-center p-6">
               <div>
