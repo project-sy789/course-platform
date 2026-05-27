@@ -96,13 +96,6 @@ export function createPlaybackSession(videoId: string) {
   );
 }
 
-export function createCheckoutSession(course_slug: string) {
-  return apiFetch<{ checkout_url: string; session_id: string }>(
-    "/api/v1/checkout/session",
-    { method: "POST", body: JSON.stringify({ course_slug }) },
-  );
-}
-
 export type SlipInfo = {
   bank_name: string;
   account_number: string;

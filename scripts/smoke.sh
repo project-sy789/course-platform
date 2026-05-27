@@ -173,12 +173,10 @@ rm -f "$B"
 echo
 
 # ---------------------------------------------------------------------------
-echo "--- 7. Stripe checkout requires auth ---"
+echo "--- 7. Slip payment info endpoint is public ---"
 B=$(mktemp)
-S=$(curl_status POST /api/v1/checkout/session "$B" \
-  -H "content-type: application/json" \
-  -d '{"course_slug":"any"}')
-assert_status 401 "$S" "checkout requires auth"
+S=$(curl_status GET /api/v1/slip-payments/info "$B")
+assert_status 200 "$S" "slip info is public"
 rm -f "$B"
 echo
 

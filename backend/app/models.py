@@ -187,7 +187,7 @@ class Payment(Base):
     slip_upload_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("slip_uploads.id", ondelete="SET NULL")
     )
-    payment_method: Mapped[str] = mapped_column(Text, nullable=False, default="stripe")
+    payment_method: Mapped[str] = mapped_column(Text, nullable=False, default="slip_manual")
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     # VAT breakdown (Thai 7% VAT). amount_cents = subtotal_cents + vat_cents.
     # Computed at payment-creation time from the configured VAT_RATE so historic

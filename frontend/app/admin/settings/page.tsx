@@ -26,9 +26,10 @@ type Settings = {
     aws_creds_set: boolean;
   };
   payments: {
-    stripe_secret_set: boolean;
-    stripe_webhook_set: boolean;
+    method: string;
     currency: string;
+    slipok_configured: boolean;
+    receiver_bank_set: boolean;
   };
   security: {
     kek_set: boolean;
@@ -162,12 +163,13 @@ export default function AdminSettingsPage() {
 
       <section className="rounded-xl border border-neutral-800 p-5 space-y-1">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-medium">การชำระเงิน (Stripe)</h2>
-          <Status ok={s.payments.stripe_secret_set && s.payments.stripe_webhook_set} />
+          <h2 className="font-medium">การชำระเงิน (โอนเงิน + สลิป)</h2>
+          <Status ok={s.payments.receiver_bank_set} />
         </div>
-        <Row label="Stripe secret key" value={<Status ok={s.payments.stripe_secret_set} labelOk="ตั้งแล้ว" labelNo="ว่าง"/>} />
-        <Row label="Webhook secret" value={<Status ok={s.payments.stripe_webhook_set} labelOk="ตั้งแล้ว" labelNo="ว่าง"/>} />
+        <Row label="วิธีการ" value={s.payments.method} />
         <Row label="สกุลเงิน" value={s.payments.currency.toUpperCase()} />
+        <Row label="ตั้งค่าบัญชีผู้รับ" value={<Status ok={s.payments.receiver_bank_set} labelOk="ตั้งแล้ว" labelNo="ว่าง"/>} />
+        <Row label="SlipOK auto-verify" value={<Status ok={s.payments.slipok_configured} labelOk="เปิด" labelNo="ปิด — รีวิวด้วย admin"/>} />
       </section>
 
       <section className="rounded-xl border border-neutral-800 p-5 space-y-1">

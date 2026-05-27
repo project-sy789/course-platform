@@ -426,12 +426,13 @@ def get_settings(_: User = Depends(current_admin)):
             "aws_creds_set": bool(settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY),
         },
         "payments": {
-            "stripe_secret_set": bool(settings.STRIPE_SECRET_KEY),
-            "stripe_webhook_set": bool(settings.STRIPE_WEBHOOK_SECRET),
+            "method": "slip_upload",
             "currency": settings.STRIPE_CURRENCY,
+            "slipok_configured": bool(settings.SLIPOK_API_KEY and settings.SLIPOK_BRANCH_ID),
+            "receiver_bank_set": bool(settings.RECEIVER_BANK_ACCOUNT),
         },
         "security": {
-            "kek_set": bool(settings.KEK_BASE64),
+            "kek_set": bool(settings.KEK_BASE64 or settings.KEK_FILE),
             "jwt_secret_set": bool(settings.JWT_SECRET),
             "jwt_ttl_min": settings.JWT_TTL_MIN,
             "pb_session_ttl_sec": settings.PB_SESSION_TTL_SEC,

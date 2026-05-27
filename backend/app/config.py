@@ -47,9 +47,10 @@ class Settings(BaseSettings):
     # Public-facing URL of the frontend, used in verification + reset links.
     FRONTEND_URL: str = "http://localhost:3000"
 
-    # Stripe
-    STRIPE_SECRET_KEY: str = ""
-    STRIPE_WEBHOOK_SECRET: str = ""
+    # Stripe is removed. Historic Payment rows keep their stripe_session_id /
+    # stripe_payment_intent columns so old invoices still render, but no new
+    # checkout sessions are minted — buyers use the slip-upload flow.
+    # Currency stays here so the invoice PDF + checkout pages know what to print.
     STRIPE_CURRENCY: str = "thb"
 
     # Thai VAT (ภาษีมูลค่าเพิ่ม). Course prices are stored as the VAT-INCLUSIVE
