@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { apiFetch, confirmDeviceOtp, loginRequest } from "@/lib/api";
+import { Button, ErrorNote, Field, Input } from "@/components/ui";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,8 +12,6 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Set when the backend asks for a device-OTP. We swap the form for a
-  // 6-digit code input and submit { challenge_token, code } to /confirm.
   const [challenge, setChallenge] = useState<string | null>(null);
   const [otp, setOtp] = useState("");
 
@@ -26,11 +26,8 @@ export default function LoginPage() {
         });
       }
       const r = await loginRequest(email, password);
-      if (r.otp_required) {
-        setChallenge(r.challenge_token);
-      } else {
-        router.push("/");
-      }
+      if (r.otp_required) setChallenge(r.challenge_token);
+      else router.push("/");
     } catch (e: any) {
       setError(e?.message ?? "failed");
     } finally {
@@ -52,83 +49,89 @@ export default function LoginPage() {
     }
   }
 
-  if (challenge) {
-    return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <form onSubmit={submitOtp} className="w-full max-w-sm space-y-4 rounded-xl border border-neutral-800 p-6">
-          <h1 className="text-xl font-semibold">ยืนยันอุปกรณ์ใหม่</h1>
-          <p className="text-sm opacity-70">
-            เราส่งรหัสยืนยัน 6 หลักไปที่อีเมลของคุณ ใช้ภายใน 10 นาที
+  return (
+    <main className="max-w-md mx-auto px-6 pt-16 pb-24">
+      {challenge ? (
+        <form onSubmit={submitOtp} className="space-y-6">
+          <div className="border-b border-rule pb-4">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-oxblood mb-2">
+              ขั้นตอนที่ ๒ — ยืนยันอุปกรณ์
+            </div>
+            <h1 className="font-display font-semibold text-[2rem] leading-none tracking-[-0.02em]">
+              กรอกรหัสยืนยัน
+            </h1>
+          </div>
+          <p className="text-[14px] text-muted leading-relaxed">
+            เราส่งรหัสยืนยัน ๖ หลักไปยังอีเมลของคุณแล้ว ใช้งานได้ภายใน ๑๐ นาที
           </p>
           <input
             inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
             required value={otp}
             onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-            placeholder="000000"
-            className="w-full text-center text-2xl tracking-[0.5em] font-mono rounded-md bg-neutral-900 border border-neutral-700 px-3 py-3"
+            placeholder="0 0 0 0 0 0"
+            className="w-full text-center font-mono text-[2rem] tracking-[0.5em]
+                       bg-transparent border-b border-rule
+                       focus:border-b-2 focus:border-oxblood outline-none py-3"
           />
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          <button
-            type="submit" disabled={busy || otp.length !== 6}
-            className="w-full rounded-md bg-white text-black font-medium py-2 disabled:opacity-50"
-          >
-            {busy ? "…" : "ยืนยัน"}
-          </button>
-          <button
-            type="button" onClick={() => { setChallenge(null); setOtp(""); }}
-            className="w-full text-xs underline opacity-70"
-          >
-            ยกเลิก
-          </button>
+          <ErrorNote>{error}</ErrorNote>
+          <div className="flex items-center justify-between pt-2">
+            <Button type="button" tone="link"
+              onClick={() => { setChallenge(null); setOtp(""); }}>
+              ← ย้อนกลับ
+            </Button>
+            <Button type="submit" disabled={busy || otp.length !== 6}>
+              {busy ? "กำลังยืนยัน…" : "ยืนยัน"}
+            </Button>
+          </div>
         </form>
-      </main>
-    );
-  }
+      ) : (
+        <form onSubmit={submit} className="space-y-6">
+          <div className="border-b border-rule pb-4">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-oxblood mb-2">
+              {mode === "login" ? "สมาชิกเก่า" : "สมาชิกใหม่"}
+            </div>
+            <h1 className="font-display font-semibold text-[2.4rem] leading-none tracking-[-0.02em]">
+              {mode === "login" ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
+            </h1>
+          </div>
 
-  return (
-    <main className="min-h-screen flex items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-xl border border-neutral-800 p-6">
-        <h1 className="text-xl font-semibold">{mode === "login" ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}</h1>
+          <Field label="อีเมล">
+            <Input type="email" required autoFocus
+              value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com" />
+          </Field>
 
-        <label className="block">
-          <span className="text-sm opacity-70">อีเมล</span>
-          <input
-            type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2 outline-none focus:border-neutral-400"
-          />
-        </label>
+          <Field label="รหัสผ่าน"
+            hint={mode === "register" ? "อย่างน้อย ๘ ตัวอักษร" : undefined}>
+            <Input type="password" required minLength={8}
+              value={password} onChange={(e) => setPassword(e.target.value)} />
+          </Field>
 
-        <label className="block">
-          <span className="text-sm opacity-70">รหัสผ่าน</span>
-          <input
-            type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2 outline-none focus:border-neutral-400"
-          />
-        </label>
+          <ErrorNote>{error}</ErrorNote>
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+          <div className="flex items-center justify-between pt-2">
+            <button type="button"
+              className="text-[13px] text-muted underline underline-offset-4 decoration-1"
+              onClick={() => setMode(mode === "login" ? "register" : "login")}>
+              {mode === "login"
+                ? "ยังไม่มีบัญชี? สมัครสมาชิก"
+                : "มีบัญชีอยู่แล้ว? เข้าสู่ระบบ"}
+            </button>
+            <Button type="submit" disabled={busy}>
+              {busy ? "…" : mode === "login" ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
+            </Button>
+          </div>
 
-        <button
-          type="submit" disabled={busy}
-          className="w-full rounded-md bg-white text-black font-medium py-2 disabled:opacity-50"
-        >
-          {busy ? "…" : mode === "login" ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
-        </button>
-
-        <button
-          type="button"
-          className="w-full text-xs underline opacity-70"
-          onClick={() => setMode(mode === "login" ? "register" : "login")}
-        >
-          {mode === "login" ? "ยังไม่มีบัญชี? สมัครสมาชิก" : "มีบัญชีอยู่แล้ว? เข้าสู่ระบบ"}
-        </button>
-
-        {mode === "login" && (
-          <a href="/forgot-password" className="block text-center text-xs underline opacity-60">
-            ลืมรหัสผ่าน?
-          </a>
-        )}
-      </form>
+          {mode === "login" && (
+            <p className="text-center pt-4 border-t border-rule/40">
+              <Link href="/forgot-password"
+                className="text-[13px] text-muted underline underline-offset-4 decoration-1">
+                ลืมรหัสผ่าน?
+              </Link>
+            </p>
+          )}
+        </form>
+      )}
     </main>
   );
 }

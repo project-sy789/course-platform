@@ -1,75 +1,43 @@
 "use client";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
+import {
+  Button, ErrorNote, Input, KeyValue, Loading, OkNote, Page, PageTitle,
+  Section, StatusDot,
+} from "@/components/ui";
 
 type Settings = {
   email: {
-    smtp_host: string;
-    smtp_port: number;
-    smtp_use_tls: boolean;
-    smtp_user: string | null;
-    smtp_password_set: boolean;
-    smtp_from: string;
-    frontend_url: string;
+    smtp_host: string; smtp_port: number; smtp_use_tls: boolean;
+    smtp_user: string | null; smtp_password_set: boolean;
+    smtp_from: string; frontend_url: string;
   };
   storage: {
-    r2_account_id_tail: string;
-    r2_bucket: string | null;
-    r2_public_base: string;
-    r2_creds_set: boolean;
+    r2_account_id_tail: string; r2_bucket: string | null;
+    r2_public_base: string; r2_creds_set: boolean;
   };
   backup: {
-    aws_region: string;
-    aws_bucket: string | null;
-    storage_class: string;
-    aws_creds_set: boolean;
+    aws_region: string; aws_bucket: string | null;
+    storage_class: string; aws_creds_set: boolean;
   };
   payments: {
-    method: string;
-    currency: string;
-    slipok_configured: boolean;
-    receiver_bank_set: boolean;
+    method: string; currency: string;
+    slipok_configured: boolean; receiver_bank_set: boolean;
   };
   security: {
-    kek_set: boolean;
-    jwt_secret_set: boolean;
-    jwt_ttl_min: number;
-    pb_session_ttl_sec: number;
-    key_rate_limit_per_min: number;
-    max_concurrent_sessions: number;
-    e2e_bypass_set: boolean;
+    kek_set: boolean; jwt_secret_set: boolean; jwt_ttl_min: number;
+    pb_session_ttl_sec: number; key_rate_limit_per_min: number;
+    max_concurrent_sessions: number; e2e_bypass_set: boolean;
   };
   cors_origins: string[];
 };
-
-function Status({ ok, labelOk = "พร้อมใช้งาน", labelNo = "ยังไม่ตั้งค่า" }: {
-  ok: boolean; labelOk?: string; labelNo?: string;
-}) {
-  return (
-    <span className={
-      "text-xs px-2 py-0.5 rounded " +
-      (ok ? "bg-emerald-950/50 text-emerald-300" : "bg-neutral-900 text-neutral-400")
-    }>
-      {ok ? labelOk : labelNo}
-    </span>
-  );
-}
-
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between py-2 text-sm">
-      <span className="opacity-60">{label}</span>
-      <span className="font-mono text-xs">{value}</span>
-    </div>
-  );
-}
 
 export default function AdminSettingsPage() {
   const [s, setS] = useState<Settings | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [testTo, setTestTo] = useState("");
   const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [testOk, setTestOk] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -79,125 +47,146 @@ export default function AdminSettingsPage() {
   }, []);
 
   async function sendTest() {
-    setBusy(true); setTestMsg(null);
+    setBusy(true); setTestMsg(null); setTestOk(false);
     try {
       await apiFetch("/api/v1/admin/settings/test-email", {
-        method: "POST",
-        body: JSON.stringify({ to: testTo }),
+        method: "POST", body: JSON.stringify({ to: testTo }),
       });
-      setTestMsg("ส่งแล้ว — ตรวจกล่องจดหมาย (รวมถึงโฟลเดอร์ Spam)");
+      setTestOk(true);
+      setTestMsg("ส่งแล้ว — ตรวจกล่องจดหมาย รวมถึงโฟลเดอร์ขยะ");
     } catch (e: any) {
       setTestMsg(`ส่งไม่สำเร็จ: ${e?.message ?? "unknown"}`);
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
-  if (err) return <main className="p-8 text-red-400">เกิดข้อผิดพลาด: {err}</main>;
-  if (!s) return <main className="p-8 opacity-60">กำลังโหลด…</main>;
+  if (err) return <Page><ErrorNote>{err}</ErrorNote></Page>;
+  if (!s) return <Page><Loading /></Page>;
 
   return (
-    <main className="max-w-3xl mx-auto p-8 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">การตั้งค่าระบบ</h1>
-        <Link href="/admin" className="text-sm underline opacity-70">← แอดมิน</Link>
-      </header>
+    <Page>
+      <PageTitle kicker="กองบรรณาธิการ — ห้องเครื่อง">
+        การตั้งค่าระบบ
+      </PageTitle>
 
-      <p className="text-sm opacity-60">
-        หน้านี้แสดงค่าที่โหลดจาก environment ของคอนเทนเนอร์ API
-        ค่าที่เป็นความลับ (คีย์, รหัสผ่าน) จะถูกซ่อนเสมอ
-        แก้ค่าผ่าน <code className="text-xs">.env</code> แล้ว <code className="text-xs">docker compose up -d</code> ใหม่
+      <p className="text-[13px] text-muted leading-relaxed -mt-6 mb-2 max-w-prose">
+        หน้านี้แสดงค่าที่อ่านจากตัวแปรสภาพแวดล้อมของคอนเทนเนอร์ API
+        ค่าที่เป็นความลับ (คีย์ลับ รหัสผ่าน) จะถูกซ่อนเสมอ
+        การแก้ไขทำผ่านไฟล์ <code className="font-mono text-ink">.env</code> แล้ว{" "}
+        <code className="font-mono text-ink">docker compose up -d</code> ใหม่
       </p>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-1">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-medium">อีเมล (SMTP / Postfix)</h2>
-          <Status ok={!!s.email.smtp_host} />
+      <Section
+        title="อีเมล"
+        hint="SMTP / Postfix relay ที่ใช้ส่งอีเมลยืนยัน รีเซ็ตรหัสผ่าน และใบกำกับภาษี"
+      >
+        <div className="mb-3">
+          <StatusDot ok={!!s.email.smtp_host} />
         </div>
-        <Row label="SMTP host" value={s.email.smtp_host || "—"} />
-        <Row label="Port" value={s.email.smtp_port} />
-        <Row label="TLS" value={s.email.smtp_use_tls ? "เปิด" : "ปิด"} />
-        <Row label="ผู้ส่ง (From)" value={s.email.smtp_from} />
-        <Row label="ผู้ใช้ SMTP" value={s.email.smtp_user ?? "—"} />
-        <Row label="รหัสผ่าน SMTP" value={<Status ok={s.email.smtp_password_set} labelOk="ตั้งแล้ว" labelNo="ว่าง"/>} />
-        <Row label="ลิงก์หน้าเว็บใน email" value={s.email.frontend_url} />
-
-        <div className="mt-4 border-t border-neutral-800 pt-4 space-y-2">
-          <p className="text-sm opacity-70">ทดสอบส่งอีเมลผ่าน relay ที่ตั้งค่าไว้:</p>
-          <div className="flex gap-2">
-            <input
-              type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)}
-              placeholder="ปลายทาง"
-              className="flex-1 rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm"
-            />
-            <button
-              onClick={sendTest} disabled={busy || !testTo}
-              className="rounded-md bg-white text-black font-medium px-4 text-sm disabled:opacity-50"
-            >
-              {busy ? "…" : "ส่งทดสอบ"}
-            </button>
+        <dl className="border-t border-rule mb-6">
+          <KeyValue k="SMTP host" v={s.email.smtp_host || "—"} />
+          <KeyValue k="Port" v={s.email.smtp_port} />
+          <KeyValue k="TLS" v={s.email.smtp_use_tls ? "เปิด" : "ปิด"} />
+          <KeyValue k="ผู้ส่ง" v={s.email.smtp_from} />
+          <KeyValue k="ผู้ใช้ SMTP" v={s.email.smtp_user ?? "—"} />
+          <KeyValue k="รหัสผ่าน SMTP"
+            v={<StatusDot ok={s.email.smtp_password_set} labelOk="ตั้งแล้ว" labelNo="ว่าง" />} />
+          <KeyValue k="ลิงก์ในอีเมล" v={s.email.frontend_url} />
+        </dl>
+        <div className="border-t border-rule pt-4">
+          <p className="text-[12px] uppercase tracking-[0.18em] text-muted mb-3">
+            ทดสอบส่งอีเมล
+          </p>
+          <div className="flex gap-3 items-end">
+            <Input type="email" placeholder="ปลายทาง"
+              value={testTo} onChange={(e) => setTestTo(e.target.value)} />
+            <Button tone="ghost" onClick={sendTest} disabled={busy || !testTo}>
+              {busy ? "…" : "ส่ง"}
+            </Button>
           </div>
-          {testMsg && <p className="text-xs opacity-70">{testMsg}</p>}
+          {testMsg && (testOk ? <OkNote>{testMsg}</OkNote> : <ErrorNote>{testMsg}</ErrorNote>)}
         </div>
-      </section>
+      </Section>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-1">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-medium">วิดีโอ Storage (Cloudflare R2)</h2>
-          <Status ok={s.storage.r2_creds_set} />
+      <Section
+        title="วิดีโอ Storage"
+        hint="Cloudflare R2 — เก็บ HLS manifest และ segment เข้ารหัส"
+      >
+        <div className="mb-3">
+          <StatusDot ok={s.storage.r2_creds_set} />
         </div>
-        <Row label="Bucket" value={s.storage.r2_bucket ?? "—"} />
-        <Row label="Public base URL" value={s.storage.r2_public_base || "—"} />
-        <Row label="Account ID (ท้าย)" value={s.storage.r2_account_id_tail || "—"} />
-      </section>
+        <dl className="border-t border-rule">
+          <KeyValue k="Bucket" v={s.storage.r2_bucket ?? "—"} />
+          <KeyValue k="Public base URL" v={s.storage.r2_public_base || "—"} />
+          <KeyValue k="Account ID (ท้าย)" v={s.storage.r2_account_id_tail || "—"} />
+        </dl>
+      </Section>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-1">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-medium">สำรองข้อมูล (S3 Glacier)</h2>
-          <Status ok={s.backup.aws_creds_set} />
+      <Section
+        title="สำรองข้อมูล"
+        hint="S3 Glacier — สำเนาฐานข้อมูลและไฟล์สื่อระยะยาว"
+      >
+        <div className="mb-3">
+          <StatusDot ok={s.backup.aws_creds_set} />
         </div>
-        <Row label="Region" value={s.backup.aws_region} />
-        <Row label="Bucket" value={s.backup.aws_bucket ?? "—"} />
-        <Row label="Storage class" value={s.backup.storage_class} />
-      </section>
+        <dl className="border-t border-rule">
+          <KeyValue k="Region" v={s.backup.aws_region} />
+          <KeyValue k="Bucket" v={s.backup.aws_bucket ?? "—"} />
+          <KeyValue k="Storage class" v={s.backup.storage_class} />
+        </dl>
+      </Section>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-1">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-medium">การชำระเงิน (โอนเงิน + สลิป)</h2>
-          <Status ok={s.payments.receiver_bank_set} />
+      <Section
+        title="การชำระเงิน"
+        hint="ระบบรับโอนผ่านธนาคาร + ตรวจสลิปด้วย SlipOK"
+      >
+        <div className="mb-3">
+          <StatusDot ok={s.payments.receiver_bank_set} />
         </div>
-        <Row label="วิธีการ" value={s.payments.method} />
-        <Row label="สกุลเงิน" value={s.payments.currency.toUpperCase()} />
-        <Row label="ตั้งค่าบัญชีผู้รับ" value={<Status ok={s.payments.receiver_bank_set} labelOk="ตั้งแล้ว" labelNo="ว่าง"/>} />
-        <Row label="SlipOK auto-verify" value={<Status ok={s.payments.slipok_configured} labelOk="เปิด" labelNo="ปิด — รีวิวด้วย admin"/>} />
-      </section>
+        <dl className="border-t border-rule">
+          <KeyValue k="วิธีการ" v={s.payments.method} />
+          <KeyValue k="สกุลเงิน" v={s.payments.currency.toUpperCase()} />
+          <KeyValue k="บัญชีผู้รับ"
+            v={<StatusDot ok={s.payments.receiver_bank_set} labelOk="ตั้งแล้ว" labelNo="ว่าง" />} />
+          <KeyValue k="SlipOK auto-verify"
+            v={<StatusDot ok={s.payments.slipok_configured}
+                          labelOk="เปิด"
+                          labelNo="ปิด — แอดมินรีวิวเอง" />} />
+        </dl>
+      </Section>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-1">
-        <h2 className="font-medium mb-3">ความปลอดภัย</h2>
-        <Row label="KEK (เข้ารหัสคีย์วิดีโอ)" value={<Status ok={s.security.kek_set} labelOk="ตั้งแล้ว" labelNo="ว่าง"/>} />
-        <Row label="JWT secret" value={<Status ok={s.security.jwt_secret_set} labelOk="ตั้งแล้ว" labelNo="ว่าง"/>} />
-        <Row label="อายุ JWT (นาที)" value={s.security.jwt_ttl_min} />
-        <Row label="อายุ playback session (วินาที)" value={s.security.pb_session_ttl_sec} />
-        <Row label="จำกัดเรียก key/นาที" value={s.security.key_rate_limit_per_min} />
-        <Row label="เซสชันสูงสุดต่อบัญชี" value={s.security.max_concurrent_sessions} />
-        <Row label="E2E bypass token"
-             value={<Status ok={s.security.e2e_bypass_set}
-                            labelOk="เปิด — ห้ามใช้ใน production!"
-                            labelNo="ปิด"/>} />
-      </section>
+      <Section
+        title="ความปลอดภัย"
+        hint="คีย์เข้ารหัส อายุเซสชัน และการจำกัดอัตราการเรียก"
+      >
+        <dl className="border-t border-rule">
+          <KeyValue k="KEK (เข้ารหัสคีย์วิดีโอ)"
+            v={<StatusDot ok={s.security.kek_set} labelOk="ตั้งแล้ว" labelNo="ว่าง" />} />
+          <KeyValue k="JWT secret"
+            v={<StatusDot ok={s.security.jwt_secret_set} labelOk="ตั้งแล้ว" labelNo="ว่าง" />} />
+          <KeyValue k="อายุ JWT" v={`${s.security.jwt_ttl_min} นาที`} />
+          <KeyValue k="อายุ playback session" v={`${s.security.pb_session_ttl_sec} วินาที`} />
+          <KeyValue k="จำกัดเรียก key" v={`${s.security.key_rate_limit_per_min} ครั้ง/นาที`} />
+          <KeyValue k="เซสชันสูงสุดต่อบัญชี" v={s.security.max_concurrent_sessions} />
+          <KeyValue k="E2E bypass"
+            v={<StatusDot ok={s.security.e2e_bypass_set}
+                          labelOk="เปิด — ห้ามใช้ใน production"
+                          labelNo="ปิด" />} />
+        </dl>
+      </Section>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-1">
-        <h2 className="font-medium mb-3">CORS</h2>
+      <Section title="CORS" hint="Origin ที่อนุญาตให้เรียก API ข้ามโดเมน">
         {s.cors_origins.length === 0 ? (
-          <p className="text-sm opacity-50">ยังไม่มี origin อนุญาต</p>
+          <p className="text-muted italic">ยังไม่มี origin อนุญาต</p>
         ) : (
-          <ul className="text-sm font-mono">
+          <ul className="border-t border-rule">
             {s.cors_origins.map((o) => (
-              <li key={o} className="py-0.5">{o}</li>
+              <li key={o} className="border-b border-rule/40 py-2 font-mono text-[13px]">
+                {o}
+              </li>
             ))}
           </ul>
         )}
-      </section>
-    </main>
+      </Section>
+    </Page>
   );
 }

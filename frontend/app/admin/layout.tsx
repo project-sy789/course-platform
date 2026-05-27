@@ -10,7 +10,7 @@ const NAV = [
   { href: "/admin/upload", label: "อัปโหลดวิดีโอ" },
   { href: "/admin/users", label: "ผู้ใช้" },
   { href: "/admin/slip-uploads", label: "ตรวจสลิป" },
-  { href: "/admin/logs", label: "บันทึกการเข้าถึง" },
+  { href: "/admin/logs", label: "บันทึกคีย์" },
   { href: "/admin/settings", label: "ตั้งค่า" },
 ];
 
@@ -21,17 +21,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     apiFetch<{ id: string; email: string }>("/api/v1/auth/me")
-      .then(async (me) => {
-        // Probe an admin-only endpoint to confirm role.
+      .then(async () => {
         try {
           await apiFetch("/api/v1/admin/stats");
           setReady(true);
         } catch (e: any) {
-          if (e instanceof ApiError && e.status === 403) {
-            router.replace("/");
-          } else {
-            throw e;
-          }
+          if (e instanceof ApiError && e.status === 403) router.replace("/");
+          else throw e;
         }
       })
       .catch((e: ApiError) => {
@@ -39,28 +35,47 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       });
   }, [router]);
 
-  if (!ready) return <div className="p-8 opacity-60">กำลังตรวจสอบสิทธิ์ผู้ดูแลระบบ…</div>;
+  if (!ready) {
+    return (
+      <div className="max-w-6xl mx-auto px-6 py-16">
+        <p className="font-display italic text-muted">
+          กำลังตรวจสอบสิทธิ์ผู้ดูแลระบบ…
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex">
-      <aside className="w-56 bg-neutral-900 border-r border-neutral-800 p-4">
-        <h2 className="font-semibold mb-4">ผู้ดูแลระบบ</h2>
-        <nav className="flex flex-col gap-1">
-          {NAV.map((n) => (
-            <Link
-              key={n.href}
-              href={n.href}
-              className={`px-3 py-2 rounded text-sm ${
-                pathname === n.href ? "bg-neutral-700" : "hover:bg-neutral-800"
-              }`}
-            >
-              {n.label}
-            </Link>
-          ))}
+    <>
+      {/* Admin sub-masthead — sits below the public masthead from RootLayout. */}
+      <div className="border-y border-rule bg-cream/40">
+        <div className="max-w-6xl mx-auto px-6 py-2 flex items-center justify-between text-[11px] uppercase tracking-[0.22em] text-muted">
+          <span>กองบรรณาธิการ — เฉพาะผู้ดูแลระบบ</span>
+          <Link href="/" className="text-muted hover:text-ink underline underline-offset-4 decoration-1">
+            ออกจากกองบ.ก. →
+          </Link>
+        </div>
+        <nav className="max-w-6xl mx-auto px-6 pb-2 flex flex-wrap gap-x-6 gap-y-1 text-[13px]">
+          {NAV.map((n) => {
+            const active = pathname === n.href;
+            return (
+              <Link
+                key={n.href}
+                href={n.href}
+                className={
+                  "py-1 transition " +
+                  (active
+                    ? "text-oxblood font-medium border-b-2 border-oxblood"
+                    : "text-ink/80 hover:text-ink border-b-2 border-transparent")
+                }
+              >
+                {n.label}
+              </Link>
+            );
+          })}
         </nav>
-        <Link href="/" className="block mt-6 text-xs underline opacity-60">← กลับสู่หน้าเว็บ</Link>
-      </aside>
-      <main className="flex-1 p-8">{children}</main>
-    </div>
+      </div>
+      {children}
+    </>
   );
 }

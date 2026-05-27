@@ -3,6 +3,45 @@
 @tailwind utilities;
 
 html, body {
-  background: #0a0a0a;
-  color: #fafafa;
+  background: #f5efe1;
+  color: #1c1814;
+}
+
+/* Editorial baseline. Thai body type wants a touch more line-height than the
+   Tailwind default to keep tone marks from kissing the descender above. */
+body {
+  font-feature-settings: "kern", "liga", "ss01";
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hairline rule — used between TOC rows. 1px on hidpi, looks like a real
+   inked rule on a printed page rather than a Tailwind border-neutral. */
+.rule {
+  border-color: #1c1814;
+  border-width: 0;
+  border-top-width: 1px;
+}
+
+/* Underline-on-hover that doesn't shift layout — preferred over hover:underline
+   which adds a baseline shift on some Thai fonts. */
+.lede a, a.lede {
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition: text-decoration-color 120ms ease;
+}
+.lede a:hover, a.lede:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Drop cap for the first paragraph of an editorial column. */
+.dropcap::first-letter {
+  font-family: var(--font-display);
+  float: left;
+  font-size: 3.4rem;
+  line-height: 0.85;
+  padding-right: 0.35rem;
+  padding-top: 0.45rem;
+  color: #7a1c1c;
 }

@@ -2,6 +2,10 @@
 import { useEffect, useState } from "react";
 import { adminApi, type AdminUser } from "@/lib/admin";
 import { formatThaiDate } from "@/lib/format";
+import {
+  Button, ErrorNote, Field, Input, OkNote, Page, PageTitle, Pill,
+  Section, TD, TH, THead, TR, Table,
+} from "@/components/ui";
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -19,61 +23,70 @@ export default function AdminUsersPage() {
     try {
       const r = await adminApi.grantEnrollment(grant.user_email, grant.course_slug);
       setMsg(`${r.status}: ${r.id}`);
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   return (
-    <div>
-      <h1 className="text-xl font-semibold mb-6">ผู้ใช้และการลงทะเบียน</h1>
+    <Page>
+      <PageTitle kicker="กองบรรณาธิการ">ผู้ใช้และการลงทะเบียน</PageTitle>
 
-      <form onSubmit={submit} className="rounded-xl border border-neutral-800 p-4 mb-8 grid gap-3 max-w-xl">
-        <h2 className="font-medium">เพิ่มสิทธิ์เรียนให้ผู้ใช้</h2>
-        <input
-          required type="email" placeholder="อีเมลผู้ใช้" value={grant.user_email}
-          onChange={(e) => setGrant({ ...grant, user_email: e.target.value })}
-          className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
-        />
-        <input
-          required placeholder="slug ของคอร์ส" value={grant.course_slug}
-          onChange={(e) => setGrant({ ...grant, course_slug: e.target.value })}
-          className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
-        />
-        {msg && <p className="text-sm text-emerald-400">{msg}</p>}
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <button className="rounded bg-white text-black font-medium py-2">เปิดสิทธิ์</button>
-      </form>
+      <Section
+        title="เปิดสิทธิ์เรียนด้วยตนเอง"
+        hint="ใช้เมื่อรับโอนเงินนอกระบบ หรือเพื่อมอบสิทธิ์ทดลองให้นักเรียน"
+      >
+        <form onSubmit={submit} className="space-y-5 max-w-xl">
+          <Field label="อีเมลผู้ใช้">
+            <Input required type="email" value={grant.user_email}
+              placeholder="user@example.com"
+              onChange={(e) => setGrant({ ...grant, user_email: e.target.value })} />
+          </Field>
+          <Field label="Slug คอร์ส">
+            <Input required value={grant.course_slug} className="font-mono"
+              onChange={(e) => setGrant({ ...grant, course_slug: e.target.value })} />
+          </Field>
+          {msg && <OkNote>{msg}</OkNote>}
+          <ErrorNote>{error}</ErrorNote>
+          <Button>เปิดสิทธิ์ →</Button>
+        </form>
+      </Section>
 
-      <div className="rounded-xl border border-neutral-800 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-900">
-            <tr className="text-left">
-              <th className="p-3">อีเมล</th>
-              <th className="p-3">บทบาท</th>
-              <th className="p-3">สถานะ</th>
-              <th className="p-3">วันที่สมัคร</th>
-            </tr>
-          </thead>
+      <Section title="ผู้ใช้ทั้งหมด" hint={`${users.length} บัญชีในระบบ`}>
+        <Table>
+          <THead>
+            <TH>อีเมล</TH>
+            <TH>บทบาท</TH>
+            <TH>สถานะ</TH>
+            <TH>วันที่สมัคร</TH>
+          </THead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id} className="border-t border-neutral-800">
-                <td className="p-3">{u.email}</td>
-                <td className="p-3">
-                  {u.is_admin ? <span className="text-yellow-400">ผู้ดูแล</span> : "ผู้ใช้"}
-                </td>
-                <td className="p-3">
-                  {u.is_active ? "ใช้งานอยู่" : <span className="text-red-400">ระงับ</span>}
-                </td>
-                <td className="p-3 opacity-60">{formatThaiDate(u.created_at)}</td>
-              </tr>
+              <TR key={u.id}>
+                <TD className="font-display text-[15px]">{u.email}</TD>
+                <TD>
+                  {u.is_admin
+                    ? <Pill tone="warn">ผู้ดูแล</Pill>
+                    : <span className="text-muted">ผู้ใช้</span>}
+                </TD>
+                <TD>
+                  {u.is_active
+                    ? <Pill tone="ok">ใช้งานอยู่</Pill>
+                    : <Pill tone="danger">ระงับ</Pill>}
+                </TD>
+                <TD className="text-muted font-mono text-[12px]">
+                  {formatThaiDate(u.created_at)}
+                </TD>
+              </TR>
             ))}
             {users.length === 0 && (
-              <tr><td colSpan={4} className="p-3 opacity-50 text-center">ยังไม่มีผู้ใช้</td></tr>
+              <TR>
+                <TD colSpan={4} className="text-muted italic text-center">
+                  ยังไม่มีผู้ใช้
+                </TD>
+              </TR>
             )}
           </tbody>
-        </table>
-      </div>
-    </div>
+        </Table>
+      </Section>
+    </Page>
   );
 }

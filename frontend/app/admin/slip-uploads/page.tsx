@@ -2,6 +2,9 @@
 import { useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatTHB, formatThaiDateTime } from "@/lib/format";
+import {
+  Button, ErrorNote, Page, PageTitle, Pill,
+} from "@/components/ui";
 
 type Slip = {
   id: string;
@@ -25,6 +28,12 @@ const FILTERS = [
   { key: "all", label: "ทั้งหมด" },
 ];
 
+function statusPill(s: string) {
+  if (s === "pending") return <Pill tone="warn">รอตรวจ</Pill>;
+  if (s.includes("approved")) return <Pill tone="ok">อนุมัติ</Pill>;
+  return <Pill tone="danger">ปฏิเสธ</Pill>;
+}
+
 export default function AdminSlipsPage() {
   const [filter, setFilter] = useState("pending");
   const [rows, setRows] = useState<Slip[]>([]);
@@ -43,101 +52,120 @@ export default function AdminSlipsPage() {
     setActing(id);
     try {
       const note = action === "reject"
-        ? window.prompt("เหตุผลในการปฏิเสธ (เห็นในประวัติของลูกค้า)") ?? ""
+        ? window.prompt("เหตุผลที่ปฏิเสธ (ผู้ใช้จะเห็นในประวัติคำสั่งซื้อ)") ?? ""
         : "";
       await apiFetch(`/api/v1/admin/slip-uploads/${id}/${action}`, {
-        method: "POST",
-        body: JSON.stringify({ note }),
+        method: "POST", body: JSON.stringify({ note }),
       });
       load();
     } catch (e: any) {
       setError(e?.message ?? "ดำเนินการไม่สำเร็จ");
-    } finally {
-      setActing(null);
-    }
+    } finally { setActing(null); }
   }
 
   return (
-    <main className="max-w-5xl mx-auto p-6 space-y-4">
-      <h1 className="text-xl font-semibold">ตรวจสอบสลิปการโอน</h1>
+    <Page>
+      <PageTitle kicker="กองบรรณาธิการ — งานการเงิน">
+        ตรวจสอบสลิปการโอน
+      </PageTitle>
 
-      <div className="flex gap-2 flex-wrap">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key} onClick={() => setFilter(f.key)}
-            className={`text-sm rounded-md px-3 py-1.5 border ${
-              filter === f.key
-                ? "bg-white text-black border-white"
-                : "border-neutral-700 hover:bg-neutral-900"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      <nav className="flex flex-wrap gap-x-6 gap-y-2 mb-8 border-y border-rule py-3">
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <button
+              key={f.key} onClick={() => setFilter(f.key)}
+              className={
+                "text-[13px] py-1 transition border-b-2 " +
+                (active
+                  ? "border-oxblood text-oxblood font-medium"
+                  : "border-transparent text-ink/80 hover:text-ink")
+              }
+            >
+              {f.label}
+            </button>
+          );
+        })}
+      </nav>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      <ErrorNote>{error}</ErrorNote>
 
-      <ul className="space-y-3">
-        {rows.length === 0 && (
-          <p className="opacity-50 text-sm">ไม่มีรายการ</p>
-        )}
-        {rows.map((s) => (
-          <li key={s.id} className="rounded-xl border border-neutral-800 p-4 flex gap-4">
-            <a href={s.image_url} target="_blank" rel="noreferrer" className="shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={s.image_url} alt="slip" className="w-32 h-40 object-cover rounded border border-neutral-800" />
-            </a>
-            <div className="flex-1 min-w-0 text-sm space-y-1">
-              <div className="flex justify-between gap-2">
-                <div>
-                  <p className="font-medium truncate">{s.user_email ?? "(ผู้ใช้ถูกลบ)"}</p>
-                  <p className="opacity-60 text-xs">
-                    {s.target ? `${s.target.type === "course" ? "คอร์ส" : "บทเรียน"}: ${s.target.title}` : "—"}
+      {rows.length === 0 ? (
+        <p className="text-muted italic py-8">ไม่มีรายการในหมวดนี้</p>
+      ) : (
+        <ol className="border-t border-rule">
+          {rows.map((s, i) => (
+            <li key={s.id} className="border-b border-rule py-6 grid grid-cols-[3rem_8rem_1fr] gap-6">
+              <span className="font-mono text-muted text-[12px] tabular-nums pt-1">
+                {(i + 1).toString().padStart(2, "0")}
+              </span>
+              <a href={s.image_url} target="_blank" rel="noreferrer" className="block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={s.image_url} alt="slip"
+                  className="w-full h-40 object-cover border border-rule"
+                />
+                <span className="text-[10px] uppercase tracking-[0.18em] text-muted mt-1 block">
+                  คลิกเพื่อขยาย
+                </span>
+              </a>
+              <div className="min-w-0 space-y-2">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="font-display text-[18px] truncate">
+                    {s.user_email ?? "— (ผู้ใช้ถูกลบ)"}
+                  </p>
+                  <p className="font-mono tabular-nums text-[18px] whitespace-nowrap">
+                    {formatTHB(s.amount_cents)}
                   </p>
                 </div>
-                <p className="font-semibold whitespace-nowrap">{formatTHB(s.amount_cents)}</p>
-              </div>
-              <p className="opacity-60 text-xs">
-                ยื่นเมื่อ {formatThaiDateTime(s.created_at)}
-                {s.slip_ref && <> · อ้างอิงสลิป {s.slip_ref}</>}
-              </p>
-              <p className="text-xs">
-                <span className={`inline-block rounded px-2 py-0.5 mr-2 ${
-                  s.status === "pending" ? "bg-yellow-900/40 text-yellow-300" :
-                  s.status.includes("approved") ? "bg-green-900/40 text-green-300" :
-                  "bg-red-900/40 text-red-300"
-                }`}>{s.status}</span>
-                {s.review_note && <span className="opacity-60">{s.review_note}</span>}
-              </p>
-              {s.status === "pending" && (
-                <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={() => review(s.id, "approve")}
-                    disabled={acting === s.id}
-                    className="text-sm rounded-md bg-white text-black px-3 py-1.5 disabled:opacity-50"
-                  >
-                    อนุมัติ + เปิดสิทธิ์
-                  </button>
-                  <button
-                    onClick={() => review(s.id, "reject")}
-                    disabled={acting === s.id}
-                    className="text-sm rounded-md border border-red-700 text-red-300 px-3 py-1.5 disabled:opacity-50"
-                  >
-                    ปฏิเสธ
-                  </button>
+                {s.target && (
+                  <p className="text-[13px] text-muted">
+                    {s.target.type === "course" ? "คอร์ส" : "บทเรียน"}: {s.target.title}
+                  </p>
+                )}
+                <p className="text-[12px] text-muted font-mono">
+                  ยื่นเมื่อ {formatThaiDateTime(s.created_at)}
+                  {s.slip_ref && <> · ref {s.slip_ref}</>}
+                </p>
+                <div className="flex items-center gap-3 pt-1">
+                  {statusPill(s.status)}
+                  {s.review_note && (
+                    <span className="text-[12px] text-muted italic">
+                      {s.review_note}
+                    </span>
+                  )}
                 </div>
-              )}
-              {s.verify_response && (
-                <details className="text-xs opacity-60">
-                  <summary className="cursor-pointer">ผลตรวจ SlipOK</summary>
-                  <pre className="whitespace-pre-wrap break-words mt-1">{s.verify_response}</pre>
-                </details>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </main>
+                {s.status === "pending" && (
+                  <div className="flex gap-3 pt-2">
+                    <Button
+                      onClick={() => review(s.id, "approve")}
+                      disabled={acting === s.id}
+                    >
+                      อนุมัติ + เปิดสิทธิ์
+                    </Button>
+                    <Button tone="ghost"
+                      onClick={() => review(s.id, "reject")}
+                      disabled={acting === s.id}
+                    >
+                      ปฏิเสธ
+                    </Button>
+                  </div>
+                )}
+                {s.verify_response && (
+                  <details className="text-[12px] text-muted pt-1">
+                    <summary className="cursor-pointer underline underline-offset-4 decoration-1">
+                      ผลตรวจ SlipOK
+                    </summary>
+                    <pre className="whitespace-pre-wrap break-words mt-2 font-mono text-[11px] bg-cream/40 p-3 border-l-2 border-muted">
+                      {s.verify_response}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Page>
   );
 }

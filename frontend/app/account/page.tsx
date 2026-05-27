@@ -1,8 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatTHB, formatThaiDate } from "@/lib/format";
+import {
+  Button, ErrorNote, Field, Hairline, Input, Loading, OkNote, Page,
+  PageTitle, Pill, Section, Textarea,
+} from "@/components/ui";
 
 type Me = { id: string; email: string; email_verified: boolean };
 type TaxInfo = {
@@ -28,7 +33,9 @@ export default function AccountPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmEmail, setConfirmEmail] = useState("");
   const [busy, setBusy] = useState(false);
-  const [tax, setTax] = useState<TaxInfo>({ tax_name: "", tax_id: "", tax_address: "", tax_branch: "" });
+  const [tax, setTax] = useState<TaxInfo>({
+    tax_name: "", tax_id: "", tax_address: "", tax_branch: "",
+  });
   const [taxSaved, setTaxSaved] = useState(false);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
 
@@ -52,17 +59,14 @@ export default function AccountPage() {
     e.preventDefault(); setBusy(true); setError(null); setTaxSaved(false);
     try {
       await apiFetch("/api/v1/account/tax-info", {
-        method: "PUT",
-        body: JSON.stringify(tax),
+        method: "PUT", body: JSON.stringify(tax),
       });
       setTaxSaved(true);
-    } catch (e: any) {
-      setError(e?.message ?? "save failed");
-    } finally { setBusy(false); }
+    } catch (e: any) { setError(e?.message ?? "save failed"); }
+    finally { setBusy(false); }
   }
 
   function downloadInvoice(p: PaymentRow) {
-    // PDF endpoint enforces auth via cookie — open in new tab.
     const url = `${process.env.NEXT_PUBLIC_API_BASE}/api/v1/payments/${p.id}/invoice`;
     window.open(url, "_blank");
   }
@@ -74,15 +78,10 @@ export default function AccountPage() {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = `account-${me?.email ?? "data"}.json`;
-      a.click();
+      a.href = url; a.download = `account-${me?.email ?? "data"}.json`; a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) {
-      setError(e?.message ?? "export failed");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e: any) { setError(e?.message ?? "export failed"); }
+    finally { setBusy(false); }
   }
 
   async function deleteAccount() {
@@ -91,14 +90,10 @@ export default function AccountPage() {
     setBusy(true); setError(null);
     try {
       await apiFetch("/api/v1/account/delete", {
-        method: "POST",
-        body: JSON.stringify({ confirm_email: confirmEmail }),
+        method: "POST", body: JSON.stringify({ confirm_email: confirmEmail }),
       });
       router.push("/login");
-    } catch (e: any) {
-      setError(e?.message ?? "delete failed");
-      setBusy(false);
-    }
+    } catch (e: any) { setError(e?.message ?? "delete failed"); setBusy(false); }
   }
 
   async function logoutAll() {
@@ -106,148 +101,132 @@ export default function AccountPage() {
     try {
       await apiFetch("/api/v1/auth/logout-all", { method: "POST" });
       router.push("/login");
-    } catch (e: any) {
-      setError(e?.message ?? "failed");
-      setBusy(false);
-    }
+    } catch (e: any) { setError(e?.message ?? "failed"); setBusy(false); }
   }
 
-  if (!me) return <main className="p-8 opacity-60">กำลังโหลด…</main>;
+  if (!me) return <Page><Loading /></Page>;
 
   return (
-    <main className="max-w-2xl mx-auto p-8 space-y-8">
-      <h1 className="text-2xl font-semibold">บัญชีของฉัน</h1>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+    <Page width="column">
+      <PageTitle kicker="ส่วนของผู้อ่าน">บัญชีของฉัน</PageTitle>
+      <ErrorNote>{error}</ErrorNote>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-2">
-        <h2 className="font-medium">โปรไฟล์</h2>
-        <p className="text-sm opacity-70">{me.email}</p>
-        <p className="text-xs opacity-50">
-          ยืนยันอีเมลแล้ว: {me.email_verified ? "ใช่" : "ยังไม่"}
-        </p>
-      </section>
+      <Section
+        title="โปรไฟล์"
+        hint="อีเมลที่ใช้สมัครและสถานะการยืนยันตัวตน"
+      >
+        <p className="font-display text-[20px] leading-snug">{me.email}</p>
+        <div className="mt-3">
+          {me.email_verified
+            ? <Pill tone="ok">ยืนยันอีเมลแล้ว</Pill>
+            : <Pill tone="warn">ยังไม่ได้ยืนยันอีเมล</Pill>}
+        </div>
+      </Section>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
-        <h2 className="font-medium">ข้อมูลออกใบกำกับภาษี</h2>
-        <p className="text-sm opacity-70">
-          กรอกข้อมูลที่ต้องการให้แสดงบนใบกำกับภาษี (เลขประจำตัวผู้เสียภาษี 13 หลัก, ที่อยู่)
-          ระบบจะใช้ข้อมูลนี้ออกใบกำกับตอนที่คุณซื้อคอร์ส
-        </p>
-        <form onSubmit={saveTax} className="grid gap-3">
-          <input
-            placeholder="ชื่อ-นามสกุล หรือ ชื่อนิติบุคคล"
-            value={tax.tax_name ?? ""} onChange={(e) => setTax({ ...tax, tax_name: e.target.value })}
-            className="rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2"
-          />
-          <input
-            placeholder="เลขประจำตัวผู้เสียภาษี (13 หลัก)"
-            inputMode="numeric" maxLength={13}
-            value={tax.tax_id ?? ""} onChange={(e) => setTax({ ...tax, tax_id: e.target.value.replace(/\D/g, "") })}
-            className="rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2 font-mono"
-          />
-          <textarea
-            placeholder="ที่อยู่สำหรับออกใบกำกับภาษี" rows={3}
-            value={tax.tax_address ?? ""} onChange={(e) => setTax({ ...tax, tax_address: e.target.value })}
-            className="rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2"
-          />
-          <input
-            placeholder="สาขา (เช่น สำนักงานใหญ่)"
-            value={tax.tax_branch ?? ""} onChange={(e) => setTax({ ...tax, tax_branch: e.target.value })}
-            className="rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2"
-          />
-          <button
-            disabled={busy}
-            className="rounded-md bg-white text-black font-medium py-2 disabled:opacity-50"
-          >
-            {busy ? "…" : "บันทึก"}
-          </button>
-          {taxSaved && <p className="text-sm text-emerald-400">บันทึกแล้ว</p>}
+      <Section
+        title="ใบกำกับภาษี"
+        hint="ข้อมูลที่จะปรากฏในใบกำกับเมื่อคุณซื้อคอร์ส ระบบจะใช้ข้อมูลล่าสุดที่บันทึกไว้"
+      >
+        <form onSubmit={saveTax} className="space-y-5">
+          <Field label="ชื่อ-นามสกุล หรือนิติบุคคล">
+            <Input value={tax.tax_name ?? ""}
+              onChange={(e) => setTax({ ...tax, tax_name: e.target.value })} />
+          </Field>
+          <Field label="เลขประจำตัวผู้เสียภาษี" hint="๑๓ หลัก">
+            <Input inputMode="numeric" maxLength={13} className="font-mono"
+              value={tax.tax_id ?? ""}
+              onChange={(e) => setTax({ ...tax, tax_id: e.target.value.replace(/\D/g, "") })} />
+          </Field>
+          <Field label="ที่อยู่">
+            <Textarea rows={3} value={tax.tax_address ?? ""}
+              onChange={(e) => setTax({ ...tax, tax_address: e.target.value })} />
+          </Field>
+          <Field label="สาขา">
+            <Input placeholder="สำนักงานใหญ่" value={tax.tax_branch ?? ""}
+              onChange={(e) => setTax({ ...tax, tax_branch: e.target.value })} />
+          </Field>
+          {taxSaved && <OkNote>บันทึกแล้ว</OkNote>}
+          <Button disabled={busy}>{busy ? "…" : "บันทึก"}</Button>
         </form>
-      </section>
+      </Section>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
-        <h2 className="font-medium">ประวัติการชำระเงิน / ใบกำกับภาษี</h2>
+      <Section
+        title="ประวัติการชำระเงิน"
+        hint="รายการที่ผ่านมาและใบกำกับภาษีย้อนหลัง"
+      >
         {payments.length === 0 ? (
-          <p className="text-sm opacity-60">ยังไม่มีรายการ</p>
+          <p className="text-muted italic">ยังไม่มีรายการ</p>
         ) : (
-          <ul className="divide-y divide-neutral-800 rounded-lg border border-neutral-800 overflow-hidden">
+          <ol className="border-t border-rule">
             {payments.map((p) => (
-              <li key={p.id} className="flex items-center justify-between px-4 py-3 text-sm">
-                <div>
-                  <div>{formatThaiDate(p.created_at)} · {formatTHB(p.amount_cents)}</div>
-                  <div className="text-xs opacity-60">
-                    สถานะ: {p.status}
+              <li key={p.id} className="border-b border-rule py-4 flex items-baseline gap-6">
+                <div className="grow">
+                  <p className="font-display text-[16px]">
+                    {formatThaiDate(p.created_at)} —{" "}
+                    <span className="font-mono">{formatTHB(p.amount_cents)}</span>
+                  </p>
+                  <p className="text-[12px] text-muted mt-1 font-mono">
+                    {p.status}
                     {p.invoice_number && <> · เลขที่ {p.invoice_number}</>}
-                  </div>
+                  </p>
                 </div>
                 {p.status === "paid" && p.invoice_number && (
-                  <button
-                    onClick={() => downloadInvoice(p)}
-                    className="rounded-md bg-white text-black text-xs font-medium px-3 py-1.5"
-                  >
-                    ดาวน์โหลดใบกำกับภาษี
-                  </button>
+                  <Button tone="ghost" onClick={() => downloadInvoice(p)}>
+                    ใบกำกับภาษี
+                  </Button>
                 )}
               </li>
             ))}
-          </ul>
+          </ol>
         )}
-      </section>
+      </Section>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
-        <h2 className="font-medium">อุปกรณ์และเซสชัน</h2>
-        <p className="text-sm opacity-70">
-          ดูรายการอุปกรณ์ที่เคยล็อกอินบัญชีนี้ และเพิกถอนอุปกรณ์ที่ไม่รู้จัก
-        </p>
-        <div className="flex gap-2">
-          <a
-            href="/account/devices"
-            className="rounded-md bg-white text-black font-medium px-4 py-2"
-          >
-            จัดการอุปกรณ์
-          </a>
-          <button
-            onClick={logoutAll} disabled={busy}
-            className="rounded-md border border-neutral-700 px-4 py-2 disabled:opacity-50"
-          >
-            ออกจากระบบทุกอุปกรณ์
-          </button>
+      <Section
+        title="อุปกรณ์และเซสชัน"
+        hint="จัดการอุปกรณ์ที่เคยเข้าสู่ระบบ หากเห็นรายการที่ไม่รู้จักให้เพิกถอนทันที"
+      >
+        <div className="flex flex-wrap gap-3">
+          <Link href="/account/devices"
+            className="inline-block px-4 py-2 text-[13px] uppercase tracking-[0.14em] bg-ink text-paper border border-ink hover:bg-oxblood hover:border-oxblood transition">
+            จัดการอุปกรณ์ →
+          </Link>
+          <Button tone="ghost" onClick={logoutAll} disabled={busy}>
+            ออกจากระบบทุกที่
+          </Button>
         </div>
-      </section>
+      </Section>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
-        <h2 className="font-medium">ดาวน์โหลดข้อมูลของฉัน</h2>
-        <p className="text-sm opacity-70">
-          ดาวน์โหลดไฟล์ JSON ของข้อมูลทั้งหมดที่ระบบเก็บไว้สำหรับบัญชีนี้
-        </p>
-        <button
-          onClick={exportData} disabled={busy}
-          className="rounded-md bg-white text-black font-medium px-4 py-2 disabled:opacity-50"
-        >
-          ดาวน์โหลดข้อมูล
-        </button>
-      </section>
+      <Section
+        title="ดาวน์โหลดข้อมูลของฉัน"
+        hint="สำเนาข้อมูลทั้งหมดในรูปแบบ JSON ตามสิทธิ์เจ้าของข้อมูล"
+      >
+        <Button tone="ghost" onClick={exportData} disabled={busy}>
+          ดาวน์โหลด JSON
+        </Button>
+      </Section>
 
-      <section className="rounded-xl border border-red-900/60 p-5 space-y-3">
-        <h2 className="font-medium text-red-300">ลบบัญชี</h2>
-        <p className="text-sm opacity-70">
-          ระบบจะล้างข้อมูลส่วนตัว ลบความคืบหน้าการเรียนและสิทธิ์เรียนทั้งหมด
-          ส่วนข้อมูลการชำระเงินจะเก็บไว้ตามกฎหมายบัญชี
-          พิมพ์อีเมลของคุณเพื่อยืนยัน
+      <Section
+        tone="danger"
+        title="ลบบัญชี"
+        hint="ล้างข้อมูลส่วนตัวและสิทธิ์เรียนทั้งหมด ส่วนข้อมูลการเงินจะเก็บไว้ตามกฎหมายบัญชี"
+      >
+        <p className="text-[13px] text-muted leading-relaxed mb-4">
+          พิมพ์อีเมล <span className="font-mono text-ink">{me.email}</span> เพื่อยืนยัน
         </p>
-        <input
-          type="email" value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)}
-          placeholder={me.email}
-          className="w-full rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2 outline-none focus:border-neutral-400"
-        />
-        <button
-          onClick={deleteAccount}
-          disabled={busy || confirmEmail.trim().toLowerCase() !== me.email.toLowerCase()}
-          className="rounded-md bg-red-600 text-white font-medium px-4 py-2 disabled:opacity-40"
-        >
-          ลบบัญชีของฉัน
-        </button>
-      </section>
-    </main>
+        <Field label="ยืนยันอีเมล">
+          <Input type="email" value={confirmEmail}
+            onChange={(e) => setConfirmEmail(e.target.value)}
+            placeholder={me.email} />
+        </Field>
+        <div className="mt-4">
+          <Button tone="danger" onClick={deleteAccount}
+            disabled={busy || confirmEmail.trim().toLowerCase() !== me.email.toLowerCase()}>
+            ลบบัญชีถาวร
+          </Button>
+        </div>
+      </Section>
+
+      <Hairline />
+    </Page>
   );
 }

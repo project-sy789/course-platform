@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
+import { Button, ErrorNote, Field, Input } from "@/components/ui";
 
 export default function ResetPasswordPage() {
   const [token, setToken] = useState<string | null>(null);
@@ -16,7 +17,7 @@ export default function ResetPasswordPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!token) { setError("ไม่พบโทเค็น"); return; }
+    if (!token) { setError("ไม่พบโทเค็นในลิงก์"); return; }
     setError(null); setBusy(true);
     try {
       await apiFetch("/api/v1/auth/reset-password", {
@@ -30,30 +31,46 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-sm rounded-xl border border-neutral-800 p-6 space-y-4">
-        <h1 className="text-xl font-semibold">ตั้งรหัสผ่านใหม่</h1>
-        {done ? (
-          <>
-            <p className="text-sm opacity-80">เปลี่ยนรหัสผ่านสำเร็จ</p>
-            <Link href="/login" className="block text-center underline">เข้าสู่ระบบ</Link>
-          </>
-        ) : (
-          <form onSubmit={submit} className="space-y-4">
-            <input
-              type="password" required minLength={8} value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)"
-              className="w-full rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2"
-            />
-            {error && <p className="text-sm text-red-400">{error}</p>}
-            <button disabled={busy || !token}
-                    className="w-full rounded-md bg-white text-black font-medium py-2 disabled:opacity-50">
-              {busy ? "…" : "บันทึกรหัสผ่านใหม่"}
-            </button>
-          </form>
-        )}
+    <main className="max-w-md mx-auto px-6 pt-16 pb-24">
+      <div className="border-b border-rule pb-4 mb-6">
+        <div className="text-[11px] uppercase tracking-[0.22em] text-oxblood mb-2">
+          กู้คืนบัญชี — ขั้นสุดท้าย
+        </div>
+        <h1 className="font-display font-semibold text-[2.2rem] leading-none tracking-[-0.02em]">
+          ตั้งรหัสผ่านใหม่
+        </h1>
       </div>
+
+      {done ? (
+        <div className="space-y-4">
+          <p className="text-[15px] leading-relaxed">เปลี่ยนรหัสผ่านสำเร็จแล้ว</p>
+          <Link
+            href="/login"
+            className="inline-block px-4 py-2 text-[13px] uppercase tracking-[0.14em] bg-ink text-paper border border-ink hover:bg-oxblood hover:border-oxblood transition"
+          >
+            เข้าสู่ระบบ →
+          </Link>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="space-y-6">
+          <Field label="รหัสผ่านใหม่" hint="อย่างน้อย ๘ ตัวอักษร">
+            <Input
+              type="password" required minLength={8} autoFocus
+              value={password} onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+          <ErrorNote>{error}</ErrorNote>
+          <div className="flex items-center justify-between pt-2">
+            <Link href="/login"
+              className="text-[13px] text-muted underline underline-offset-4 decoration-1">
+              ← ยกเลิก
+            </Link>
+            <Button type="submit" disabled={busy || !token}>
+              {busy ? "…" : "บันทึก"}
+            </Button>
+          </div>
+        </form>
+      )}
     </main>
   );
 }

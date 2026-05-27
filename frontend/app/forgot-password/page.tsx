@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { apiFetch } from "@/lib/api";
+import { Button, Field, Input } from "@/components/ui";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -18,30 +20,51 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-xl border border-neutral-800 p-6 space-y-4">
-        <h1 className="text-xl font-semibold">ลืมรหัสผ่าน</h1>
-        {sent ? (
-          <p className="text-sm opacity-80">
-            หากอีเมลนี้ลงทะเบียนไว้ในระบบ เราจะส่งลิงก์รีเซ็ตรหัสผ่านให้ในไม่กี่นาที กรุณาตรวจกล่องจดหมาย
+    <main className="max-w-md mx-auto px-6 pt-16 pb-24">
+      <div className="border-b border-rule pb-4 mb-6">
+        <div className="text-[11px] uppercase tracking-[0.22em] text-oxblood mb-2">
+          กู้คืนบัญชี
+        </div>
+        <h1 className="font-display font-semibold text-[2.2rem] leading-none tracking-[-0.02em]">
+          ลืมรหัสผ่าน
+        </h1>
+      </div>
+
+      {sent ? (
+        <div className="space-y-4">
+          <p className="text-[15px] leading-relaxed">
+            หากอีเมลนี้ลงทะเบียนไว้ในระบบ
+            เราจะส่งลิงก์รีเซ็ตรหัสผ่านให้ในไม่กี่นาที
+            กรุณาตรวจกล่องจดหมาย รวมถึงโฟลเดอร์ขยะ
           </p>
-        ) : (
-          <>
-            <p className="text-sm opacity-70">
-              กรอกอีเมลที่ใช้สมัคร เราจะส่งลิงก์รีเซ็ตรหัสผ่านให้ใช้งานครั้งเดียว
-            </p>
-            <input
-              type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2"
-            />
-            <button disabled={busy}
-                    className="w-full rounded-md bg-white text-black font-medium py-2 disabled:opacity-50">
+          <p className="text-[12px] italic text-muted">
+            ลิงก์รีเซ็ตใช้งานได้ครั้งเดียว และหมดอายุใน ๑๕ นาที
+          </p>
+          <Link href="/login" className="inline-block text-[14px] underline underline-offset-4">
+            ← กลับไปหน้าเข้าสู่ระบบ
+          </Link>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="space-y-6">
+          <p className="text-[14px] text-muted leading-relaxed">
+            กรอกอีเมลที่ใช้สมัคร เราจะส่งลิงก์รีเซ็ตรหัสผ่านที่ใช้งานได้ครั้งเดียว
+          </p>
+          <Field label="อีเมล">
+            <Input type="email" required autoFocus
+              value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com" />
+          </Field>
+          <div className="flex items-center justify-between pt-2">
+            <Link href="/login"
+              className="text-[13px] text-muted underline underline-offset-4 decoration-1">
+              ← ย้อนกลับ
+            </Link>
+            <Button type="submit" disabled={busy}>
               {busy ? "…" : "ส่งลิงก์รีเซ็ต"}
-            </button>
-          </>
-        )}
-      </form>
+            </Button>
+          </div>
+        </form>
+      )}
     </main>
   );
 }

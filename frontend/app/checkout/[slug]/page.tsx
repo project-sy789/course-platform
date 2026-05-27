@@ -4,6 +4,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetch, ApiError, getSlipInfo, uploadSlip, SlipInfo } from "@/lib/api";
 import { formatTHB } from "@/lib/format";
+import {
+  Button, ErrorNote, KeyValue, Loading, Page, PageTitle, Section,
+} from "@/components/ui";
 
 type Course = {
   id: string;
@@ -39,94 +42,122 @@ export default function CheckoutPage({ params }: { params: { slug: string } }) {
       const r = await uploadSlip({ image: file, course_slug: course.slug });
       setResult({ status: r.status, message: r.message });
     } catch (e: any) {
-      if (e instanceof ApiError && e.status === 401) {
-        router.push("/login");
-        return;
-      }
+      if (e instanceof ApiError && e.status === 401) { router.push("/login"); return; }
       setError(e?.message ?? "อัปโหลดไม่สำเร็จ");
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
-  if (error && !course) return <main className="p-8 text-red-400">{error}</main>;
-  if (!course || !info) return <main className="p-8 opacity-60">กำลังโหลด…</main>;
+  if (error && !course) return <Page width="narrow"><ErrorNote>{error}</ErrorNote></Page>;
+  if (!course || !info) return <Page width="narrow"><Loading /></Page>;
 
   if (result) {
     return (
-      <main className="max-w-xl mx-auto p-8">
-        <div className="rounded-xl border border-neutral-800 p-6 space-y-3">
-          <h1 className="text-xl font-semibold">
+      <Page width="narrow">
+        <div className="border-b border-rule pb-4 mb-6">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-oxblood mb-2">
+            {result.status === "auto_approved" ? "ตรวจสอบสลิปอัตโนมัติ" : "รอเจ้าหน้าที่ตรวจ"}
+          </div>
+          <h1 className="font-display font-semibold text-[2.2rem] leading-none tracking-[-0.02em]">
             {result.status === "auto_approved" ? "ยืนยันการชำระเงินสำเร็จ" : "ได้รับสลิปแล้ว"}
           </h1>
-          <p className="opacity-80">{result.message}</p>
-          <div className="flex gap-2 pt-2">
-            <Link
-              href={`/courses/${course.slug}`}
-              className="rounded-md bg-white text-black font-medium px-4 py-2"
-            >
-              ไปยังคอร์ส
-            </Link>
-            <Link href="/account" className="rounded-md border border-neutral-700 px-4 py-2">
-              ดูสถานะการสั่งซื้อ
-            </Link>
-          </div>
         </div>
-      </main>
+        <p className="text-[15px] leading-relaxed mb-6">{result.message}</p>
+        <div className="flex flex-wrap gap-3">
+          <Link href={`/courses/${course.slug}`}
+            className="inline-block px-4 py-2 text-[13px] uppercase tracking-[0.14em] bg-ink text-paper border border-ink hover:bg-oxblood hover:border-oxblood transition">
+            ไปยังคอร์ส →
+          </Link>
+          <Link href="/account"
+            className="inline-block px-4 py-2 text-[13px] uppercase tracking-[0.14em] border border-rule hover:border-ink transition">
+            ดูสถานะการสั่งซื้อ
+          </Link>
+        </div>
+      </Page>
     );
   }
 
   return (
-    <main className="max-w-xl mx-auto p-8 space-y-6">
-      <Link href={`/courses/${course.slug}`} className="text-sm underline opacity-70">← กลับ</Link>
+    <Page width="column">
+      <Link href={`/courses/${course.slug}`}
+        className="text-[13px] text-muted underline underline-offset-4 decoration-1 inline-block mb-6">
+        ← กลับสู่หน้าคอร์ส
+      </Link>
 
-      <header>
-        <h1 className="text-2xl font-semibold">ชำระเงิน</h1>
-        <p className="opacity-70 mt-1">{course.title}</p>
-        <p className="text-3xl font-semibold mt-3">{formatTHB(course.price_cents)}</p>
-        <p className="text-xs opacity-50">รวมภาษีมูลค่าเพิ่ม 7% แล้ว</p>
-      </header>
+      <PageTitle kicker="ชำระเงิน">{course.title}</PageTitle>
 
-      <section className="rounded-xl border border-neutral-800 p-5 space-y-2">
-        <h2 className="text-sm uppercase tracking-wide opacity-60">โอนเงินมาที่</h2>
-        <dl className="text-sm grid grid-cols-[120px_1fr] gap-y-1">
-          <dt className="opacity-60">ธนาคาร</dt><dd>{info.bank_name || "—"}</dd>
-          <dt className="opacity-60">เลขบัญชี</dt>
-          <dd className="font-mono">{info.account_number || "—"}</dd>
-          <dt className="opacity-60">ชื่อบัญชี</dt><dd>{info.account_name || "—"}</dd>
-          {info.promptpay_id && (
-            <>
-              <dt className="opacity-60">พร้อมเพย์</dt>
-              <dd className="font-mono">{info.promptpay_id}</dd>
-            </>
-          )}
-        </dl>
-        <p className="text-xs opacity-50 pt-2">
-          กรุณาโอนยอด <b>{formatTHB(course.price_cents)}</b> ให้ตรงตามจำนวน
-          {info.auto_verify
-            ? " ระบบจะตรวจสลิปอัตโนมัติและเปิดสิทธิ์ทันที"
-            : " ทีมงานจะตรวจสอบและเปิดสิทธิ์ภายใน 24 ชั่วโมง"}
-        </p>
-      </section>
+      <div className="grid md:grid-cols-12 gap-10">
+        <div className="md:col-span-7 space-y-10">
+          <section>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-muted mb-4">
+              ขั้นที่ ๑ — โอนเงินมาที่
+            </div>
+            <dl className="border-t border-rule">
+              <KeyValue k="ธนาคาร" v={info.bank_name || "—"} />
+              <KeyValue k="เลขบัญชี" v={info.account_number || "—"} />
+              <KeyValue k="ชื่อบัญชี" v={info.account_name || "—"} />
+              {info.promptpay_id && (
+                <KeyValue k="พร้อมเพย์" v={info.promptpay_id} />
+              )}
+            </dl>
+            <p className="text-[13px] text-muted leading-relaxed mt-4">
+              โอนยอด{" "}
+              <span className="font-mono text-ink font-medium">
+                {formatTHB(course.price_cents)}
+              </span>{" "}
+              ให้ตรงตามจำนวน
+              {info.auto_verify
+                ? " ระบบจะตรวจสลิปอัตโนมัติและเปิดสิทธิ์ทันทีหลังจากแนบสลิป"
+                : " เจ้าหน้าที่จะตรวจสอบและเปิดสิทธิ์ภายใน ๒๔ ชั่วโมง"}
+            </p>
+          </section>
 
-      <form onSubmit={submit} className="rounded-xl border border-neutral-800 p-5 space-y-3">
-        <h2 className="text-sm uppercase tracking-wide opacity-60">แนบสลิป</h2>
-        <input
-          type="file" accept="image/png,image/jpeg,image/webp" required
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-neutral-700 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-white"
-        />
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <button
-          type="submit" disabled={!file || busy}
-          className="w-full rounded-md bg-white text-black font-medium py-2 disabled:opacity-50"
-        >
-          {busy ? "กำลังอัปโหลด…" : "ส่งสลิป"}
-        </button>
-        <p className="text-xs opacity-50">
-          รองรับไฟล์ JPG / PNG / WebP ขนาดไม่เกิน 4 MB
-        </p>
-      </form>
-    </main>
+          <Section
+            title="ขั้นที่ ๒ — แนบสลิป"
+            hint="รองรับ JPG / PNG / WebP ขนาดไม่เกิน ๔ MB"
+          >
+            <form onSubmit={submit} className="space-y-5">
+              <input
+                type="file" accept="image/png,image/jpeg,image/webp" required
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="block w-full text-[14px] file:mr-4 file:border file:border-ink
+                           file:bg-ink file:text-paper file:px-4 file:py-2
+                           file:text-[12px] file:uppercase file:tracking-[0.14em]
+                           file:cursor-pointer hover:file:bg-oxblood hover:file:border-oxblood"
+              />
+              {file && (
+                <p className="text-[12px] text-muted font-mono">
+                  เลือกแล้ว: {file.name}
+                </p>
+              )}
+              <ErrorNote>{error}</ErrorNote>
+              <Button type="submit" disabled={!file || busy}>
+                {busy ? "กำลังอัปโหลด…" : "ส่งสลิปยืนยัน →"}
+              </Button>
+            </form>
+          </Section>
+        </div>
+
+        <aside className="md:col-span-5 md:border-l md:border-rule md:pl-10">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-muted mb-3">
+            สรุปคำสั่งซื้อ
+          </div>
+          <p className="font-display text-[20px] leading-snug mb-6">
+            {course.title}
+          </p>
+          <dl className="border-t border-rule">
+            <KeyValue k="ราคาคอร์ส" v={formatTHB(course.price_cents)} />
+            <KeyValue k="ภาษีมูลค่าเพิ่ม" v="รวมในราคาแล้ว" />
+          </dl>
+          <div className="mt-6 pt-6 border-t border-rule">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-muted mb-2">
+              ยอดที่ต้องโอน
+            </div>
+            <p className="font-display text-[40px] leading-none font-mono tabular-nums">
+              {formatTHB(course.price_cents)}
+            </p>
+          </div>
+        </aside>
+      </div>
+    </Page>
   );
 }

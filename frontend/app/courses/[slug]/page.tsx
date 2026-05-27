@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatTHB } from "@/lib/format";
+import { ErrorNote, Loading, Page, Pill } from "@/components/ui";
 
 function accessLabel(days: number | null | undefined): string {
   if (days == null) return "เข้าถึงได้ตลอดชีพ";
@@ -33,51 +34,87 @@ export default function CoursePage({ params }: { params: { slug: string } }) {
       .catch((e: ApiError) => setError(e?.message ?? "failed"));
   }, [params.slug]);
 
-  if (error) return <main className="p-8 text-red-400">เกิดข้อผิดพลาด: {error}</main>;
-  if (!course) return <main className="p-8 opacity-60">กำลังโหลด…</main>;
+  if (error) return <Page><ErrorNote>{error}</ErrorNote></Page>;
+  if (!course) return <Page><Loading /></Page>;
 
   const isFree = course.price_cents === 0;
 
   return (
-    <main className="max-w-3xl mx-auto p-8">
-      <Link href="/" className="text-sm underline opacity-70">← คอร์สทั้งหมด</Link>
+    <Page width="column">
+      <Link href="/" className="text-[13px] text-muted underline underline-offset-4 decoration-1 inline-block mb-6">
+        ← สารบัญทั้งหมด
+      </Link>
 
-      <div className="mt-4 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">{course.title}</h1>
-          {course.description && <p className="opacity-70 mt-2">{course.description}</p>}
-          <p className="mt-2 text-xs inline-block bg-neutral-900 border border-neutral-800 rounded px-2 py-1 opacity-80">
-            {accessLabel(course.access_duration_days)}
-          </p>
+      <article className="grid md:grid-cols-12 gap-8 md:gap-12 pb-10 border-b border-rule">
+        <div className="md:col-span-8">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-oxblood mb-3">
+            คอร์สเรียน
+          </div>
+          <h1 className="font-display font-semibold leading-[1.04] tracking-[-0.02em] text-[clamp(2rem,4.6vw,3.4rem)]">
+            {course.title}
+          </h1>
+          {course.description && (
+            <p className="font-display text-[17px] leading-[1.7] mt-6 text-ink/90 max-w-prose">
+              {course.description}
+            </p>
+          )}
+          <div className="mt-6 flex items-center gap-4 text-[13px]">
+            <Pill tone="neutral">{accessLabel(course.access_duration_days)}</Pill>
+            <Pill tone="neutral">{course.lessons.length} บทเรียน</Pill>
+          </div>
         </div>
-        {!isFree && (
-          <button
-            onClick={() => router.push(`/checkout/${course.slug}`)}
-            className="rounded-md bg-white text-black font-medium px-4 py-2 whitespace-nowrap"
-          >
-            ซื้อ {formatTHB(course.price_cents)}
-          </button>
-        )}
-      </div>
 
-      <ol className="mt-6 divide-y divide-neutral-800 rounded-xl border border-neutral-800 overflow-hidden">
-        {course.lessons.map((l) => (
-          <li key={l.id}>
-            <Link
-              href={`/courses/${course.slug}/lessons/${l.id}`}
-              className="flex items-center justify-between px-4 py-3 hover:bg-neutral-900"
-            >
-              <span>
-                <span className="opacity-50 mr-3">{l.position}.</span>
-                {l.title}
-              </span>
-              {l.is_preview && (
-                <span className="text-xs bg-neutral-800 px-2 py-0.5 rounded">ดูฟรี</span>
-              )}
-            </Link>
-          </li>
-        ))}
-      </ol>
-    </main>
+        <aside className="md:col-span-4 md:border-l md:border-rule md:pl-8">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-muted mb-3">
+            ราคา
+          </div>
+          {isFree ? (
+            <p className="font-display text-[32px] leading-none">เรียนฟรี</p>
+          ) : (
+            <>
+              <p className="font-display text-[36px] leading-none font-mono tabular-nums">
+                {formatTHB(course.price_cents)}
+              </p>
+              <p className="text-[12px] text-muted mt-1">รวมภาษีมูลค่าเพิ่มแล้ว</p>
+              <button
+                onClick={() => router.push(`/checkout/${course.slug}`)}
+                className="mt-6 w-full px-4 py-3 text-[13px] uppercase tracking-[0.14em] bg-ink text-paper border border-ink hover:bg-oxblood hover:border-oxblood transition"
+              >
+                สั่งซื้อคอร์สนี้ →
+              </button>
+            </>
+          )}
+        </aside>
+      </article>
+
+      <section className="mt-14">
+        <div className="flex items-baseline gap-4 mb-6">
+          <h2 className="font-display text-2xl">สารบัญบทเรียน</h2>
+          <span className="grow border-t border-rule/40" />
+          <span className="font-mono text-[11px] text-muted">
+            {course.lessons.length.toString().padStart(2, "0")} บท
+          </span>
+        </div>
+
+        <ol className="border-t border-rule">
+          {course.lessons.map((l) => (
+            <li key={l.id} className="border-b border-rule">
+              <Link
+                href={`/courses/${course.slug}/lessons/${l.id}`}
+                className="grid grid-cols-[3rem_1fr_auto] gap-6 py-4 items-baseline group"
+              >
+                <span className="font-mono text-muted text-sm tabular-nums">
+                  {l.position.toString().padStart(2, "0")}
+                </span>
+                <span className="font-display text-[18px] group-hover:text-oxblood transition-colors">
+                  {l.title}
+                </span>
+                {l.is_preview && <Pill tone="ok">ดูฟรี</Pill>}
+              </Link>
+            </li>
+          ))}
+        </ol>
+      </section>
+    </Page>
   );
 }

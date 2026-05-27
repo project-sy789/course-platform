@@ -3,6 +3,10 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { adminApi } from "@/lib/admin";
 import { formatTHB } from "@/lib/format";
+import {
+  Button, ErrorNote, Field, Input, Page, PageTitle, Pill, Section,
+  TD, TH, THead, TR, Table, Textarea,
+} from "@/components/ui";
 
 type Course = {
   id: string;
@@ -18,7 +22,6 @@ export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [form, setForm] = useState({
     slug: "", title: "", description: "", price_cents: 0,
-    // empty string == ตลอดชีพ; positive number == limited days
     access_duration_days: "" as string,
     pixel_watermark: false,
   });
@@ -48,101 +51,106 @@ export default function AdminCoursesPage() {
         access_duration_days: "", pixel_watermark: false,
       });
       await reload();
-    } catch (e: any) {
-      setError(e.message);
-    } finally { setBusy(false); }
+    } catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
   }
 
   return (
-    <div>
-      <h1 className="text-xl font-semibold mb-6">คอร์ส</h1>
+    <Page>
+      <PageTitle kicker="กองบรรณาธิการ">คอร์ส</PageTitle>
 
-      <form onSubmit={submit} className="rounded-xl border border-neutral-800 p-4 mb-8 grid gap-3 max-w-xl">
-        <h2 className="font-medium">สร้างคอร์สใหม่</h2>
-        <input
-          required placeholder="slug (เช่น intro)" value={form.slug}
-          onChange={(e) => setForm({ ...form, slug: e.target.value })}
-          className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
-        />
-        <input
-          required placeholder="ชื่อคอร์ส" value={form.title}
-          onChange={(e) => setForm({ ...form, title: e.target.value })}
-          className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
-        />
-        <textarea
-          placeholder="คำอธิบาย (ไม่บังคับ)" value={form.description}
-          onChange={(e) => setForm({ ...form, description: e.target.value })}
-          rows={2}
-          className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
-        />
-        <label className="text-xs opacity-60 -mb-2">ราคา (สตางค์ — 100 = 1 บาท)</label>
-        <input
-          type="number" min={0} placeholder="ราคา (สตางค์)" value={form.price_cents}
-          onChange={(e) => setForm({ ...form, price_cents: Number(e.target.value) })}
-          className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
-        />
-        <label className="text-xs opacity-60 -mb-2">
-          ระยะเวลาเข้าถึง (วัน) — ปล่อยว่างเพื่อให้เข้าถึงได้ตลอดชีพ
-        </label>
-        <input
-          type="number" min={1} placeholder="ว่าง = ตลอดชีพ"
-          value={form.access_duration_days}
-          onChange={(e) => setForm({ ...form, access_duration_days: e.target.value })}
-          className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
-        />
-        <label className="flex items-start gap-2 text-sm py-1">
-          <input
-            type="checkbox" checked={form.pixel_watermark}
-            onChange={(e) => setForm({ ...form, pixel_watermark: e.target.checked })}
-            className="mt-1"
-          />
-          <span>
-            ฝังลายน้ำลงในพิกเซลวิดีโอ (Pixel Watermark)
-            <span className="block text-xs opacity-50 mt-0.5">
-              ลายน้ำติดไปกับการบันทึกหน้าจอด้วย แต่กิน CPU/แบตมากกว่า ~30%
-              และปิดการเร่งฮาร์ดแวร์ — แนะนำเฉพาะคอร์สราคาสูง
+      <Section
+        title="สร้างคอร์สใหม่"
+        hint="เผยแพร่คอร์สเป็นการเริ่มต้น — บทเรียนและวิดีโอเพิ่มได้ในขั้นถัดไป"
+      >
+        <form onSubmit={submit} className="space-y-5 max-w-xl">
+          <Field label="Slug" hint="ตัวระบุใน URL เช่น thai-history-modern">
+            <Input required value={form.slug} className="font-mono"
+              onChange={(e) => setForm({ ...form, slug: e.target.value })} />
+          </Field>
+          <Field label="ชื่อคอร์ส">
+            <Input required value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          </Field>
+          <Field label="คำอธิบาย" hint="ไม่บังคับ — ใช้แสดงบนหน้าคอร์ส">
+            <Textarea rows={3} value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </Field>
+          <Field label="ราคา (สตางค์)" hint="๑๐๐ สตางค์ = ๑ บาท · กรอก 0 เพื่อให้เรียนฟรี">
+            <Input type="number" min={0} value={form.price_cents} className="font-mono"
+              onChange={(e) => setForm({ ...form, price_cents: Number(e.target.value) })} />
+          </Field>
+          <Field label="ระยะเวลาเข้าถึง (วัน)" hint="ปล่อยว่างเพื่อให้เข้าถึงได้ตลอดชีพ">
+            <Input type="number" min={1} placeholder="ว่าง = ตลอดชีพ"
+              value={form.access_duration_days}
+              onChange={(e) => setForm({ ...form, access_duration_days: e.target.value })} />
+          </Field>
+
+          <label className="flex items-start gap-3 text-[14px] cursor-pointer pt-2">
+            <input
+              type="checkbox" checked={form.pixel_watermark}
+              onChange={(e) => setForm({ ...form, pixel_watermark: e.target.checked })}
+              className="mt-[5px] accent-oxblood w-4 h-4"
+            />
+            <span>
+              <span className="font-display text-[16px]">
+                ฝังลายน้ำลงในพิกเซลวิดีโอ
+              </span>
+              <span className="block text-[12px] text-muted mt-1 leading-snug max-w-prose">
+                ลายน้ำจะติดไปกับการบันทึกหน้าจอด้วย
+                แต่กิน CPU และแบตเตอรี่มากกว่าประมาณร้อยละ ๓๐
+                และปิดการเร่งฮาร์ดแวร์ — แนะนำเฉพาะคอร์สที่มีมูลค่าสูง
+              </span>
             </span>
-          </span>
-        </label>
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <button disabled={busy} className="rounded bg-white text-black font-medium py-2 disabled:opacity-50">
-          {busy ? "…" : "สร้างคอร์ส"}
-        </button>
-      </form>
+          </label>
 
-      <div className="rounded-xl border border-neutral-800 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-900">
-            <tr className="text-left">
-              <th className="p-3">Slug</th>
-              <th className="p-3">ชื่อคอร์ส</th>
-              <th className="p-3">ราคา</th>
-              <th className="p-3">ระยะเวลาเข้าถึง</th>
-              <th className="p-3">ลายน้ำพิกเซล</th>
-            </tr>
-          </thead>
+          <ErrorNote>{error}</ErrorNote>
+          <Button disabled={busy}>{busy ? "…" : "สร้างคอร์ส →"}</Button>
+        </form>
+      </Section>
+
+      <Section
+        title="คอร์สทั้งหมด"
+        hint={`${courses.length} รายการในระบบ`}
+      >
+        <Table>
+          <THead>
+            <TH>Slug</TH>
+            <TH>ชื่อคอร์ส</TH>
+            <TH>ราคา</TH>
+            <TH>เข้าถึง</TH>
+            <TH>ลายน้ำ</TH>
+          </THead>
           <tbody>
             {courses.map((c) => (
-              <tr key={c.id} className="border-t border-neutral-800">
-                <td className="p-3 font-mono">{c.slug}</td>
-                <td className="p-3">{c.title}</td>
-                <td className="p-3">
+              <TR key={c.id}>
+                <TD className="font-mono text-[12px]">{c.slug}</TD>
+                <TD className="font-display text-[15px]">{c.title}</TD>
+                <TD className="font-mono">
                   {c.price_cents === 0 ? "ฟรี" : formatTHB(c.price_cents)}
-                </td>
-                <td className="p-3">
-                  {c.access_duration_days == null ? "ตลอดชีพ" : `${c.access_duration_days} วัน`}
-                </td>
-                <td className="p-3">
-                  {c.pixel_watermark ? <span className="text-emerald-400">เปิด</span> : <span className="opacity-40">ปิด</span>}
-                </td>
-              </tr>
+                </TD>
+                <TD>
+                  {c.access_duration_days == null
+                    ? "ตลอดชีพ"
+                    : `${c.access_duration_days} วัน`}
+                </TD>
+                <TD>
+                  {c.pixel_watermark
+                    ? <Pill tone="ok">เปิด</Pill>
+                    : <Pill tone="neutral">ปิด</Pill>}
+                </TD>
+              </TR>
             ))}
             {courses.length === 0 && (
-              <tr><td colSpan={5} className="p-3 opacity-50 text-center">ยังไม่มีคอร์ส</td></tr>
+              <TR>
+                <TD colSpan={5} className="text-muted italic text-center">
+                  ยังไม่มีคอร์ส
+                </TD>
+              </TR>
             )}
           </tbody>
-        </table>
-      </div>
-    </div>
+        </Table>
+      </Section>
+    </Page>
   );
 }
