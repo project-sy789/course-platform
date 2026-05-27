@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { adminApi } from "@/lib/admin";
+import { formatTHB } from "@/lib/format";
 
 type Course = {
   id: string;
@@ -48,29 +49,29 @@ export default function AdminCoursesPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-6">Courses</h1>
+      <h1 className="text-xl font-semibold mb-6">คอร์ส</h1>
 
       <form onSubmit={submit} className="rounded-xl border border-neutral-800 p-4 mb-8 grid gap-3 max-w-xl">
-        <h2 className="font-medium">Create course</h2>
+        <h2 className="font-medium">สร้างคอร์สใหม่</h2>
         <input
-          required placeholder="slug (e.g. intro)" value={form.slug}
+          required placeholder="slug (เช่น intro)" value={form.slug}
           onChange={(e) => setForm({ ...form, slug: e.target.value })}
           className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
         />
         <input
-          required placeholder="title" value={form.title}
+          required placeholder="ชื่อคอร์ส" value={form.title}
           onChange={(e) => setForm({ ...form, title: e.target.value })}
           className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
         />
         <textarea
-          placeholder="description (optional)" value={form.description}
+          placeholder="คำอธิบาย (ไม่บังคับ)" value={form.description}
           onChange={(e) => setForm({ ...form, description: e.target.value })}
           rows={2}
           className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
         />
         <label className="text-xs opacity-60 -mb-2">ราคา (สตางค์ — 100 = 1 บาท)</label>
         <input
-          type="number" min={0} placeholder="price (satang)" value={form.price_cents}
+          type="number" min={0} placeholder="ราคา (สตางค์)" value={form.price_cents}
           onChange={(e) => setForm({ ...form, price_cents: Number(e.target.value) })}
           className="rounded bg-neutral-900 border border-neutral-700 px-3 py-2"
         />
@@ -85,7 +86,7 @@ export default function AdminCoursesPage() {
         />
         {error && <p className="text-sm text-red-400">{error}</p>}
         <button disabled={busy} className="rounded bg-white text-black font-medium py-2 disabled:opacity-50">
-          {busy ? "…" : "Create"}
+          {busy ? "…" : "สร้างคอร์ส"}
         </button>
       </form>
 
@@ -94,9 +95,9 @@ export default function AdminCoursesPage() {
           <thead className="bg-neutral-900">
             <tr className="text-left">
               <th className="p-3">Slug</th>
-              <th className="p-3">Title</th>
-              <th className="p-3">Price</th>
-              <th className="p-3">Access</th>
+              <th className="p-3">ชื่อคอร์ส</th>
+              <th className="p-3">ราคา</th>
+              <th className="p-3">ระยะเวลาเข้าถึง</th>
             </tr>
           </thead>
           <tbody>
@@ -105,7 +106,7 @@ export default function AdminCoursesPage() {
                 <td className="p-3 font-mono">{c.slug}</td>
                 <td className="p-3">{c.title}</td>
                 <td className="p-3">
-                  {c.price_cents === 0 ? "ฟรี" : `฿${(c.price_cents / 100).toFixed(2)}`}
+                  {c.price_cents === 0 ? "ฟรี" : formatTHB(c.price_cents)}
                 </td>
                 <td className="p-3">
                   {c.access_duration_days == null ? "ตลอดชีพ" : `${c.access_duration_days} วัน`}
@@ -113,7 +114,7 @@ export default function AdminCoursesPage() {
               </tr>
             ))}
             {courses.length === 0 && (
-              <tr><td colSpan={4} className="p-3 opacity-50 text-center">No courses yet</td></tr>
+              <tr><td colSpan={4} className="p-3 opacity-50 text-center">ยังไม่มีคอร์ส</td></tr>
             )}
           </tbody>
         </table>
