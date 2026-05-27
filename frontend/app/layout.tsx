@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { IBM_Plex_Serif, IBM_Plex_Mono, Sarabun } from "next/font/google";
+import MockBackend from "@/components/MockBackend";
 
 const display = IBM_Plex_Serif({
   subsets: ["latin"],
@@ -104,6 +105,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="th" className={`${display.variable} ${sans.variable} ${mono.variable}`}>
       <body className="min-h-screen bg-paper text-ink font-sans">
+        <MockBackend />
         <Masthead />
         {children}
         <Colophon />
