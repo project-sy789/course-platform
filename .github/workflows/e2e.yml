@@ -1,0 +1,52 @@
+name: e2e
+
+# Critical-flow Playwright run using the in-browser mock backend. No real
+# backend stack required — `NEXT_PUBLIC_MOCK=1` flips lib/mock-backend.ts
+# into intercept mode and serves the demo data deterministically.
+#
+# The legacy e2e/auth.spec.ts + e2e/account.spec.ts target the real Docker
+# stack and are skipped here. Run those locally with the full
+# docker compose up + E2E_BYPASS_TOKEN environment.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/e2e.yml"
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run critical-flow specs
+        run: npx playwright test e2e/critical-flow.spec.ts
+        env:
+          NEXT_PUBLIC_MOCK: "1"
+          CI: "1"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14

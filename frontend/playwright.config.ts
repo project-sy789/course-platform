@@ -3,12 +3,19 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Playwright config for end-to-end tests.
  *
- * Assumes a running stack: docker compose up -d (api + db + redis) AND
- * `npm run dev` (or `npm run start` after `npm run build`) on the frontend.
+ * Two modes:
  *
- * The tests do NOT spin those up themselves — that keeps a single run/debug
- * loop fast in development. CI should `webServer.command` instead.
+ * 1. Default (local dev): assumes a stack is already running — docker
+ *    compose up -d (api + db + redis) AND `npm run dev` for the frontend.
+ *    Keeps the run/debug loop fast.
+ *
+ * 2. CI / mock-backend mode (E2E_USE_MOCK=1 or CI=1): Playwright starts
+ *    `next start` itself with NEXT_PUBLIC_MOCK=1 so lib/mock-backend.ts
+ *    intercepts /api/v1/* and serves the seed data — no Docker stack
+ *    needed. critical-flow.spec.ts is written for this mode.
  */
+const useMock = process.env.E2E_USE_MOCK === "1" || process.env.CI === "true";
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
@@ -19,12 +26,18 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
-    extraHTTPHeaders: {
-      // Frontend reads NEXT_PUBLIC_API_BASE; backend defaults to localhost:8000.
-    },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
+  webServer: useMock
+    ? {
+        command: "npm run build && npm run start -- -p 3000",
+        url: "http://localhost:3000",
+        reuseExistingServer: !process.env.CI,
+        timeout: 180_000,
+        env: { NEXT_PUBLIC_MOCK: "1" },
+      }
+    : undefined,
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
