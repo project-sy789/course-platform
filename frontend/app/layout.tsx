@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { IBM_Plex_Serif, IBM_Plex_Mono, Sarabun } from "next/font/google";
 import MockBackend from "@/components/MockBackend";
+import AccountNav from "@/components/AccountNav";
 
 const display = IBM_Plex_Serif({
   subsets: ["latin"],
@@ -62,7 +63,7 @@ function Masthead() {
           <Link href="/account" className="lede">บัญชีของฉัน</Link>
           <Link href="/account/devices" className="lede">อุปกรณ์ที่อนุญาต</Link>
           <span className="grow" />
-          <Link href="/login" className="lede">เข้าสู่ระบบ →</Link>
+          <AccountNav />
         </div>
       </nav>
     </header>

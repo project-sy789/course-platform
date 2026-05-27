@@ -414,7 +414,7 @@ export async function handle(
 		const u = requireAuth(state);
 		if (!u) return err(401, "not authenticated");
 		return ok({
-			id: u.id, email: u.email,
+			id: u.id, email: u.email, is_admin: u.is_admin,
 			email_verified: u.email_verified, is_active: u.is_active,
 		});
 	}
