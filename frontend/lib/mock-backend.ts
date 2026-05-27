@@ -50,11 +50,21 @@ type MockSlip = {
 	review_note: string | null;
 };
 
+type MockProgress = {
+	user_id: string;
+	lesson_id: string;
+	position_seconds: number;
+	duration_seconds: number;
+	completed: boolean;
+	updated_at: string;
+};
+
 type MockState = {
 	currentUserId: string | null;
 	users: MockUser[];
 	courses: MockCourse[];
 	slips: MockSlip[];
+	progress: MockProgress[];
 	tax_info: {
 		tax_name: string | null;
 		tax_id: string | null;
@@ -233,6 +243,7 @@ function seed(): MockState {
 			tax_address: null,
 			tax_branch: null,
 		},
+		progress: [],
 	};
 }
 
@@ -244,6 +255,7 @@ function load(): MockState {
 		const parsed = JSON.parse(raw);
 		// shape-check the few top-level keys; if anything's off, reseed.
 		if (!parsed.users || !parsed.courses || !parsed.slips) return seed();
+		if (!parsed.progress) parsed.progress = [];
 		return parsed;
 	} catch {
 		return seed();
@@ -361,6 +373,67 @@ export async function handle(
 				if (l) return ok({ ...l, course_id: c.id });
 			}
 			return err(404, "lesson not found");
+		}
+	}
+
+	// ----- progress --------------------------------------------------------
+	{
+		const m = /^\/api\/v1\/lessons\/([^/]+)\/progress$/.exec(path);
+		if (m && (method === "GET" || method === "PUT")) {
+			const u = requireAuth(state);
+			if (!u) return err(401, "not authenticated");
+			const lessonId = m[1]!;
+			if (method === "GET") {
+				const p = state.progress.find((x) => x.user_id === u.id && x.lesson_id === lessonId);
+				if (!p) return ok({ position_seconds: 0, duration_seconds: 0, completed: false });
+				return ok(p);
+			}
+			const body = await readJson(init);
+			const dur = Math.max(0, Number(body.duration_seconds ?? 0));
+			const rawPos = Math.max(0, Number(body.position_seconds ?? 0));
+			const pos = dur > 0 ? Math.min(rawPos, dur) : rawPos;
+			const completed = dur > 0 && pos >= Math.floor(dur * 0.9);
+			let p = state.progress.find((x) => x.user_id === u.id && x.lesson_id === lessonId);
+			if (!p) {
+				p = { user_id: u.id, lesson_id: lessonId, position_seconds: pos, duration_seconds: dur, completed, updated_at: new Date().toISOString() };
+				state.progress.push(p);
+			} else {
+				p.position_seconds = pos;
+				p.duration_seconds = dur;
+				p.completed = p.completed || completed;
+				p.updated_at = new Date().toISOString();
+			}
+			save(state);
+			return ok({ position_seconds: pos, completed: p.completed });
+		}
+	}
+	{
+		const m = /^\/api\/v1\/courses\/([^/]+)\/progress$/.exec(path);
+		if (m && method === "GET") {
+			const u = requireAuth(state);
+			if (!u) return err(401, "not authenticated");
+			const c = state.courses.find((x) => x.slug === m[1]);
+			if (!c) return err(404, "course not found");
+			const items = c.lessons
+				.slice()
+				.sort((a, b) => a.position - b.position)
+				.map((l) => {
+					const p = state.progress.find((x) => x.user_id === u.id && x.lesson_id === l.id);
+					return {
+						lesson_id: l.id,
+						title: l.title,
+						position: l.position,
+						position_seconds: p?.position_seconds ?? 0,
+						duration_seconds: p?.duration_seconds ?? 0,
+						completed: !!p?.completed,
+					};
+				});
+			return ok({
+				course_slug: c.slug,
+				completed_lessons: items.filter((x) => x.completed).length,
+				total_lessons: items.length,
+				lessons: items,
+			});
 		}
 	}
 
