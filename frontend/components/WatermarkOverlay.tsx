@@ -16,8 +16,13 @@ export default function WatermarkOverlay({ userEmail, userId, clientIp }: Props)
     const ctx = canvas.getContext("2d")!;
     let raf = 0;
     let pos = { x: 50, y: 50 };
-    let target = { x: 50, y: 50 };
-    let lastJump = 0;
+    let lastJump = -Infinity;
+    // Hold-then-hop cycle: stationary for HOLD_MS, fade out over FADE_MS,
+    // snap to a new spot, fade back in. A stationary mark sits in
+    // peripheral vision unobtrusively — it's the constant drift that
+    // makes the eye chase it.
+    const HOLD_MS = 15000;
+    const FADE_MS = 600;
 
     const baseText = `${userEmail} • ${userId.slice(0, 8)}${clientIp ? " • " + clientIp : ""}`;
     let stamp = "";
@@ -47,24 +52,27 @@ export default function WatermarkOverlay({ userEmail, userId, clientIp }: Props)
     ro.observe(parent);
 
     const draw = (t: number) => {
-      const interval = 5000 + Math.random() * 5000; // 5–10s
-      if (t - lastJump > interval) {
+      const cycle = HOLD_MS + FADE_MS * 2;
+      if (t - lastJump > cycle) {
         const w = parent.clientWidth;
         const h = parent.clientHeight;
-        target = {
+        pos = {
           x: 20 + Math.random() * Math.max(20, w - 360),
           y: 20 + Math.random() * Math.max(20, h - 60),
         };
         lastJump = t;
       }
-      pos.x += (target.x - pos.x) * 0.04;
-      pos.y += (target.y - pos.y) * 0.04;
+      // Triangle envelope: fade in, hold, fade out.
+      const phase = t - lastJump;
+      let alpha = 1;
+      if (phase < FADE_MS) alpha = phase / FADE_MS;
+      else if (phase > FADE_MS + HOLD_MS) alpha = 1 - (phase - FADE_MS - HOLD_MS) / FADE_MS;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.font = "16px ui-sans-serif, system-ui, -apple-system, sans-serif";
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "rgba(0,0,0,0.30)";
-      ctx.fillStyle = "rgba(255,255,255,0.30)";
+      ctx.font = "14px ui-sans-serif, system-ui, -apple-system, sans-serif";
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = `rgba(0,0,0,${0.22 * alpha})`;
+      ctx.fillStyle = `rgba(255,255,255,${0.22 * alpha})`;
       const text = `${baseText} • ${stamp}`;
       ctx.strokeText(text, pos.x, pos.y);
       ctx.fillText(text, pos.x, pos.y);
