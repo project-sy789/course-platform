@@ -195,16 +195,24 @@ export default function AccountPage() {
       </section>
 
       <section className="rounded-xl border border-neutral-800 p-5 space-y-3">
-        <h2 className="font-medium">เซสชันการเข้าใช้งาน</h2>
+        <h2 className="font-medium">อุปกรณ์และเซสชัน</h2>
         <p className="text-sm opacity-70">
-          ออกจากระบบทุกอุปกรณ์ที่บัญชีนี้กำลังใช้งานอยู่
+          ดูรายการอุปกรณ์ที่เคยล็อกอินบัญชีนี้ และเพิกถอนอุปกรณ์ที่ไม่รู้จัก
         </p>
-        <button
-          onClick={logoutAll} disabled={busy}
-          className="rounded-md bg-white text-black font-medium px-4 py-2 disabled:opacity-50"
-        >
-          ออกจากระบบทุกอุปกรณ์
-        </button>
+        <div className="flex gap-2">
+          <a
+            href="/account/devices"
+            className="rounded-md bg-white text-black font-medium px-4 py-2"
+          >
+            จัดการอุปกรณ์
+          </a>
+          <button
+            onClick={logoutAll} disabled={busy}
+            className="rounded-md border border-neutral-700 px-4 py-2 disabled:opacity-50"
+          >
+            ออกจากระบบทุกอุปกรณ์
+          </button>
+        </div>
       </section>
 
       <section className="rounded-xl border border-neutral-800 p-5 space-y-3">

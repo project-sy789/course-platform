@@ -96,6 +96,31 @@ export function createPlaybackSession(videoId: string) {
   );
 }
 
+export type Device = {
+  id: string;
+  label: string;
+  last_seen_at: string;
+  last_ip: string | null;
+  created_at: string;
+  current: boolean;
+};
+
+export function listDevices() {
+  return apiFetch<Device[]>("/api/v1/account/devices");
+}
+
+export function revokeDevice(id: string) {
+  return apiFetch<{ ok: true }>(`/api/v1/account/devices/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function revokeAllDevices() {
+  return apiFetch<{ ok: true }>("/api/v1/account/devices/revoke-all", {
+    method: "POST",
+  });
+}
+
 export type SlipInfo = {
   bank_name: string;
   account_number: string;

@@ -15,12 +15,13 @@ import datetime as dt
 import hashlib
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from ..antisharing import hash_device_id
 from ..config import settings
 from ..db import get_redis, get_session
 from ..deps import current_user
@@ -83,10 +84,16 @@ def update_tax_info(
 
 @router.get("/devices")
 def list_devices(
+    request: Request,
     user: User = Depends(current_user),
     db: Session = Depends(get_session),
 ):
+    """List the caller's trusted devices. The `current` flag marks the device
+    matching the X-Device-Id header on this request, so the UI can highlight
+    it and warn the user before revoking themselves."""
     from ..models import TrustedDevice
+    raw_did = request.headers.get("x-device-id", "")
+    current_hash = hash_device_id(raw_did) if raw_did else None
     rows = db.scalars(
         select(TrustedDevice)
         .where(TrustedDevice.user_id == user.id)
@@ -99,6 +106,7 @@ def list_devices(
             "last_seen_at": r.last_seen_at.isoformat(),
             "last_ip": str(r.last_ip) if r.last_ip else None,
             "created_at": r.created_at.isoformat(),
+            "current": current_hash is not None and r.device_hash == current_hash,
         } for r in rows
     ]
 
@@ -109,11 +117,36 @@ def revoke_device(
     user: User = Depends(current_user),
     db: Session = Depends(get_session),
 ):
+    """Untrust one device. The user keeps the JWT they have right now —
+    revocation only blocks future logins from that browser (next login will
+    require an OTP again). To kill an active session use revoke-all."""
     from ..models import TrustedDevice
     td = db.get(TrustedDevice, device_id)
     if not td or td.user_id != user.id:
         raise HTTPException(404, "not found")
     db.delete(td); db.commit()
+    return {"ok": True}
+
+
+@router.post("/devices/revoke-all")
+async def revoke_all_devices(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+):
+    """Untrust every device AND mass-revoke every JWT this user holds.
+
+    The caller's current cookie dies with the rest — they must log in again
+    and re-confirm an OTP. This is the "I think someone stole my password"
+    button."""
+    from ..models import TrustedDevice
+    db.execute(delete(TrustedDevice).where(TrustedDevice.user_id == user.id))
+    db.commit()
+    cutoff = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    await redis.set(
+        f"jwt:user_revoke:{user.id}", str(cutoff),
+        ex=settings.JWT_TTL_MIN * 60,
+    )
     return {"ok": True}
 
 
