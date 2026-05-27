@@ -575,6 +575,28 @@ export async function handle(
 			save(state);
 			return ok({ id: c.id });
 		}
+		{
+			const m = /^\/api\/v1\/admin\/courses\/([^/]+)$/.exec(path);
+			if (m && method === "PATCH") {
+				const c = state.courses.find((x) => x.slug === m[1]);
+				if (!c) return err(404, "ไม่พบคอร์ส");
+				const b = await readJson(init);
+				if (b.title !== undefined) c.title = b.title;
+				if (b.description !== undefined) c.description = b.description;
+				if (b.price_cents !== undefined) c.price_cents = b.price_cents;
+				if (b.access_duration_days !== undefined) c.access_duration_days = b.access_duration_days;
+				if (b.pixel_watermark !== undefined) c.pixel_watermark = !!b.pixel_watermark;
+				save(state);
+				return ok({ ok: true });
+			}
+			if (m && method === "DELETE") {
+				const idx = state.courses.findIndex((x) => x.slug === m[1]);
+				if (idx < 0) return err(404, "ไม่พบคอร์ส");
+				state.courses.splice(idx, 1);
+				save(state);
+				return ok({ ok: true });
+			}
+		}
 		if (method === "POST" && path === "/api/v1/admin/enrollments") {
 			const b = await readJson(init);
 			return ok({ id: `e-${Date.now()}`, status: "granted", ...b });

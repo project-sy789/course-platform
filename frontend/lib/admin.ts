@@ -42,6 +42,20 @@ export const adminApi = {
     apiFetch<{ id: string }>("/api/v1/admin/courses", {
       method: "POST", body: JSON.stringify(body),
     }),
+  updateCourse: (slug: string, body: {
+    title?: string;
+    description?: string;
+    price_cents?: number;
+    access_duration_days?: number | null;
+    pixel_watermark?: boolean;
+  }) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/admin/courses/${slug}`, {
+      method: "PATCH", body: JSON.stringify(body),
+    }),
+  deleteCourse: (slug: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/admin/courses/${slug}`, {
+      method: "DELETE",
+    }),
   grantEnrollment: (user_email: string, course_slug: string) =>
     apiFetch<{ id: string; status: string }>("/api/v1/admin/enrollments", {
       method: "POST", body: JSON.stringify({ user_email, course_slug }),
