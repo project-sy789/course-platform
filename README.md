@@ -1,142 +1,221 @@
-# Course Platform — HLS AES-128 with Secure Key Delivery
+# Course Platform
 
-Decoupled architecture: encrypted HLS on Cloudflare R2, key delivery + auth on Hetzner VPS, Next.js player with dynamic canvas watermark.
+Thai-first online-course platform with layered video-piracy mitigations:
+encrypted HLS at the edge, per-session AES key delivery, IP+UA-pinned
+playback sessions, edge rate-limit + bot-block, dynamic identity
+watermarking (overlay or pixel-baked), anti-DevTools heuristics, anti-
+sharing OTP + concurrent-session cap, slip-upload payments with SlipOK
+auto-OCR, blue-green deploy on a single VPS, daily cold-backup to S3
+Glacier Deep Archive.
+
+> Read **[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)** before editing
+> anything that touches the playback path. Read
+> **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** for the request
+> lifecycles and data model.
 
 ## Stack
-- **Backend**: FastAPI + PostgreSQL + Redis (Docker)
-- **Frontend**: Next.js 14 (App Router) + Tailwind + hls.js
-- **Storage**: Cloudflare R2 (HLS .m3u8 + .ts encrypted offline)
-- **Reverse proxy**: Caddy (auto TLS)
 
-## Layout
+- **Backend** — FastAPI · PostgreSQL 16 · Redis · arq worker (Docker Compose)
+- **Frontend** — Next.js 14 (App Router) · Tailwind 3 · hls.js
+- **Edge** — Cloudflare Worker (`edge-worker/`) for rate-limit, bot-block, HMAC media cookie
+- **Storage** — Cloudflare R2 (encrypted segments + slip uploads)
+- **Reverse proxy** — Caddy (auto TLS, blue-green via active-upstream snippet)
+- **Monitoring** — Prometheus + Loki + Promtail + Grafana, 4 alert rules
+
+## Repo layout
+
 ```
 course-platform/
-├── backend/        FastAPI service
-├── frontend/       Next.js app (incl. /admin)
-├── monitoring/     Prometheus + Grafana provisioning
+├── backend/            FastAPI service + alembic + tests
+├── frontend/           Next.js app (public + /admin) + Playwright e2e + mock-backend
+├── edge-worker/        Cloudflare Worker (TypeScript)
+├── deploy/             Caddy active-upstream snippet, blue-green runbook
+├── monitoring/         Prometheus, Loki, Grafana provisioning
+├── scripts/            deploy.sh, rollback.sh, run_tests.sh, smoke.sh
+├── docs/               ARCHITECTURE.md, THREAT_MODEL.md, restore-runbook.md, …
 ├── docker-compose.yml
 ├── Caddyfile
 └── .env.example
 ```
 
-## Quick start (local)
+## Quick start
+
+### Local with the real stack
 
 ```bash
 cp .env.example .env
-# fill secrets — at minimum: JWT_SECRET, KEK_BASE64, DB_PASSWORD, GRAFANA_PASSWORD
-# generate them:
-#   openssl rand -hex 64           # JWT_SECRET
-#   openssl rand -base64 32        # KEK_BASE64
+# minimum required: JWT_SECRET, KEK_BASE64, DB_PASSWORD, GRAFANA_PASSWORD
+#   openssl rand -hex 64           → JWT_SECRET
+#   openssl rand -base64 32        → KEK_BASE64
 
 docker compose up -d --build
 docker compose exec api alembic upgrade head
 
-# Frontend (separate terminal)
+# Frontend in another terminal
 cd frontend
-cp .env.example .env.local
+cp .env.example .env.local                         # NEXT_PUBLIC_API_BASE=http://localhost:8000
 npm install
-npm run dev
+npm run dev                                        # http://localhost:3000
 ```
 
-## Running tests
-
-The key delivery endpoint is the most security-critical surface in the system.
-A green test run is a precondition for deploy.
+### Local with the mock backend (no Docker)
 
 ```bash
-./scripts/run_tests.sh           # full suite
-./scripts/run_tests.sh -k key    # just /key endpoint tests
+cd frontend
+NEXT_PUBLIC_MOCK=1 npm run dev
 ```
 
-Tests run inside the api container against a dedicated `course_test` database
-that is dropped + recreated each invocation. Redis is replaced with `fakeredis`
-in-process so tests don't share state.
+`lib/mock-backend.ts` patches `window.fetch` and serves seed data from
+`localStorage`. Useful for UI work and for the CI e2e run.
 
-Covered:
-- Every auth/enrollment path of `/api/v1/videos/{id}/playback-session` and `/key`
-- IP and User-Agent mismatch (token replay) rejection
-- Inactive user rejection between session creation and key fetch
-- That every attempt — granted or denied — is written to `key_access_log`
-- Auth flow (register / login / inactive user / duplicate email / weak password)
-- Liveness + readiness health checks
+Demo credentials seeded by the mock:
+
+| Role  | Email                  | Password    |
+|-------|------------------------|-------------|
+| admin | `admin@example.com`    | `admin1234` |
+| user  | `user@example.com`     | `user1234`  |
+
+A "รีเซ็ตข้อมูลจำลอง" button is rendered bottom-right when the mock
+is active.
+
+## Features
+
+### Public site
+
+- Editorial homepage + numbered course catalogue (`/`, `/courses`)
+- Course detail with progress aside (`เรียนต่อ →`, %, per-lesson `✓` /
+  partial bar) when signed-in
+- Encrypted HLS player with watermark overlay (or pixel-baked, per-course)
+- Lesson materials (PDF) downloads
+- Account: enrollments, payments history, tax info, devices,
+  GDPR export + delete
+- Slip-upload checkout (no Stripe — Thai bank-transfer flow with SlipOK auto-OCR)
+- Themed Thai 404 / error / loading fallbacks
+
+### Admin (`/admin`)
+
+- Dashboard with key-grant / key-denial counters
+- Courses CRUD with inline edit + delete-with-enrolment-guard
+- **Lesson management** under `/admin/courses/<slug>` —
+  rename, reorder (↑↓), toggle preview, set per-lesson price,
+  delete-with-entitlement-guard
+- Multi-bitrate folder upload at `/admin/upload`
+- Background encode-job tracking
+- Slip-upload review queue with approve / reject + note
+- User list (search, promote-to-admin handled CLI-side)
+- Key-access log inspector with grant/deny filter
+- Settings inspector (which integrations are wired up)
+
+### Backend security layers
+
+See `docs/THREAT_MODEL.md` for the rationale for each. The short
+summary:
+
+| Layer | What |
+|---|---|
+| 1 | Encrypted HLS at rest (R2) |
+| 2 | Per-session AES key delivery, IP+UA pinned, expires_at |
+| 3 | Cloudflare worker — rate-limit + bot UA block + HMAC media cookie |
+| 4 | Device-pinned OTP + `MAX_CONCURRENT_SESSIONS` cap |
+| 5 | Watermarking (overlay or pixel-baked) |
+| 6 | DevTools-open + watermark-tamper detection |
+| 7 | Origin hardening (HttpOnly + `__Host-` cookies, CSP, CSRF, rate-limited auth) |
+
+### Operational
+
+- Blue-green deploy with atomic active-upstream rewrite (see
+  `deploy/README.md`)
+- Daily `pg_dump` + R2 → S3 Glacier Deep Archive cold backup
+- Prometheus / Grafana with 4 alert rules
+- Loki + Promtail for centralized logs
+
+## Tests
+
+### Backend (pytest)
+
+```bash
+./scripts/run_tests.sh            # full suite, runs inside the api container
+./scripts/run_tests.sh -k key     # filter
+```
+
+Coverage areas: key endpoint, manifest proxy, auth, devices,
+anti-sharing, abuse-guard, credits, invoice, lesson entitlement,
+materials, progress, rate-limit, refund/GDPR, slip payments,
+time-limited enrolment, admin lesson CRUD, health.
+
+### Frontend e2e (Playwright)
+
+Two modes:
+
+```bash
+# Against the in-browser mock — no Docker needed.
+cd frontend && CI=true npx playwright test critical-flow.spec.ts
+
+# Against the full local stack (covers register/verify/login/etc).
+docker compose up -d --build
+cd frontend && npm run e2e
+# requires E2E_BYPASS_TOKEN matched on both sides
+```
+
+CI uses the mock-backend mode for `critical-flow.spec.ts`.
+
+## CI
+
+Three GitHub Actions workflows under `.github/workflows/`:
+
+- `backend.yml` — postgres-16 service container, `pytest -v`
+- `frontend.yml` — `tsc --noEmit`, `next lint`, `next build`
+- `e2e.yml` — Playwright critical-flow against the mock backend
+
+All three run on PRs touching their respective tree, plus on push to main.
 
 ## Promoting an admin user
 
 ```bash
-# Register a user via the UI first, then:
+# Register via UI first, then:
 docker compose exec api python -m scripts.make_admin you@example.com
-# Sign in again, navigate to /admin
 ```
-
-## Monitoring (Prometheus + Grafana)
-
-See "Monitoring & alerting" section below for the full setup.
 
 ## Production deploy (Hetzner)
 
-1. Provision Ubuntu 24.04 VPS
+1. Provision Ubuntu 24.04 VPS, full-disk encryption recommended.
 2. `curl -fsSL https://get.docker.com | sh`
 3. `git clone <repo> && cd course-platform`
-4. Fill `.env` with strong secrets
-5. Edit `Caddyfile` — replace `api.example.com` with your domain
+4. Fill `.env` with strong secrets (see Quick start).
+5. Edit `Caddyfile` — replace `api.example.com` with your domain.
 6. `docker compose up -d --build`
 7. `docker compose exec api alembic upgrade head`
-8. Point DNS A-record at VPS IP
+8. Point DNS A-record at VPS IP.
 
-## Video ingest workflow
+For ongoing deploys read `deploy/README.md` — the blue-green dance has a
+migration contract that must be respected.
+
+## Video ingest
 
 ```bash
-# Multi-bitrate (recommended): use the helper script
 backend/scripts/encode_multibitrate.sh source.mp4 ./out https://api.example.com
 # Produces ./out/master.m3u8 + 360p/ + 720p/ + 1080p/ + key.hex
 
-# Then upload via the admin UI at /admin/upload (folder picker preserves subdirs)
+# Then in the admin UI at /admin/upload, pick the folder.
 ```
 
-For single-bitrate, encode any HLS-AES asset with ffmpeg directly and upload the
-flat file list — see the help text on `/admin/upload`.
+For single-bitrate or hand-encoded HLS-AES, see the help text on
+`/admin/upload`.
 
-## Cold backup to S3 Glacier Deep Archive
+## Cold backup
 
-Add AWS credentials to `.env` (`AWS_BACKUP_BUCKET`, `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`). The Ofelia container runs `backup_to_glacier` daily at
-03:17 UTC, copying:
+Backups run via Ofelia daily at 03:17 UTC. Add `AWS_BACKUP_BUCKET`,
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` to `.env`. Both the R2
+object tree and a `pg_dump` are copied to Deep Archive.
 
-- Every R2 object → `s3://<bucket>/media/<key>` (incremental — skips already-backed-up keys)
-- `pg_dump` of the entire DB → `s3://<bucket>/db/<timestamp>.sql.gz`
+The DB dump holds `video_keys` (KEK-encrypted). **Without it, R2
+segments are useless.** Use a separate AWS account / scoped IAM —
+PutObject-only, no Delete. Restore guidance lives in
+`docs/restore-runbook.md`.
 
-Run manually:
-```bash
-docker compose exec api python -m scripts.backup_to_glacier
-```
+## Threat model
 
-**Restoring** from Deep Archive takes 12–48h. Use AWS Console or `aws s3api restore-object`
-on the specific keys you need; do not put restore on the hot path.
-
-The DB dump contains `video_keys` (encrypted with the master KEK). **Without it,
-R2 segments are useless — losing the DB is losing every video.** Treat the
-backup AWS account as a separate trust boundary: PutObject only, no Delete.
-
-## Monitoring & alerting (Prometheus + Grafana)
-
-- API exposes `/metrics` (request rate, latency, status codes)
-- Prometheus scrapes `api:8000/metrics` every 15s, retains 30 days
-- Grafana auto-provisions:
-  - Datasource (`Prometheus`)
-  - Dashboard (`Course Platform — API`)
-  - **Alert rules** (4): API down, 5xx rate, key denial spike, p95 latency
-  - Contact point: webhook (set `ALERT_WEBHOOK_URL` in `.env` — Discord/Slack/generic)
-- Login: `admin` / `${GRAFANA_PASSWORD}`. Expose behind a separate subdomain in production
-  and IP-allowlist it.
-
-## Threat model — what this prevents and what it doesn't
-
-| Threat | Prevented? |
-|---|---|
-| Direct download of `.ts` segments | ✅ Encrypted, useless without key |
-| Stealing key via DevTools | ⚠️  Logged + IP/UA bound; forensic, not preventive |
-| Account sharing | ⚠️  Watermark identifies leaker |
-| Screen recording (OBS, phone) | ❌ Cannot prevent — watermark survives, traceable |
-| Skilled DevTools bypass | ❌ Heuristic only |
-
-The system **raises cost of piracy and adds traceability**. It is not, and cannot be, a hard wall.
+The platform raises piracy cost and embeds identity into every leaked
+frame. It does **not** prevent screen-recording or HDMI capture — that
+is impossible at the application layer. Read `docs/THREAT_MODEL.md`
+for the full layer-by-layer breakdown.
