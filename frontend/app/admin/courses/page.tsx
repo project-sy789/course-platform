@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, Fragment } from "react";
+import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { adminApi } from "@/lib/admin";
 import { formatTHB } from "@/lib/format";
@@ -210,6 +211,12 @@ export default function AdminCoursesPage() {
                         </button>
                       ) : (
                         <span className="inline-flex gap-x-4">
+                          <Link
+                            href={`/admin/courses/${c.slug}`}
+                            className="text-[12px] text-ink hover:text-oxblood underline underline-offset-4 decoration-1"
+                          >
+                            บทเรียน →
+                          </Link>
                           <button
                             onClick={() => startEdit(c)}
                             className="text-[12px] text-ink hover:text-oxblood underline underline-offset-4 decoration-1"

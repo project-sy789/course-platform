@@ -262,6 +262,71 @@ def delete_course(
     return {"ok": True}
 
 
+# ---------- Lesson management ----------
+# Lessons are created via the upload/finalize flow; these endpoints only
+# cover after-the-fact edits (rename, reorder, toggle preview, per-lesson
+# pricing, deletion).
+
+class LessonPatch(BaseModel):
+    title: Optional[str] = None
+    position: Optional[int] = None
+    is_preview: Optional[bool] = None
+    price_cents: Optional[int] = None
+
+
+@router.patch("/lessons/{lesson_id}")
+def update_lesson(
+    lesson_id: str,
+    body: LessonPatch,
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    lesson = db.get(Lesson, lesson_id)
+    if not lesson:
+        raise HTTPException(404, "lesson not found")
+    patch = body.model_dump(exclude_unset=True)
+    # Position swaps need to dodge the (course_id, position) unique
+    # constraint — if the target slot is taken, swap with the occupant.
+    new_pos = patch.get("position")
+    if new_pos is not None and new_pos != lesson.position:
+        other = db.scalar(
+            select(Lesson).where(
+                Lesson.course_id == lesson.course_id,
+                Lesson.position == new_pos,
+                Lesson.id != lesson.id,
+            )
+        )
+        if other:
+            other.position, lesson.position = lesson.position, new_pos
+            patch.pop("position")
+    for k, v in patch.items():
+        setattr(lesson, k, v)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/lessons/{lesson_id}")
+def delete_lesson(
+    lesson_id: str,
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    lesson = db.get(Lesson, lesson_id)
+    if not lesson:
+        raise HTTPException(404, "lesson not found")
+    # Refuse if anyone holds a paid LessonEntitlement — like courses, force
+    # admin to revoke first instead of silently destroying paid access.
+    from ..models import LessonEntitlement
+    ent_count = db.scalar(
+        select(func.count()).select_from(LessonEntitlement)
+        .where(LessonEntitlement.lesson_id == lesson.id)
+    ) or 0
+    if ent_count > 0:
+        raise HTTPException(409, f"lesson has {ent_count} active entitlements — revoke first")
+    db.delete(lesson); db.commit()
+    return {"ok": True}
+
+
 # ---------- Video upload ----------
 # Files are buffered in /tmp under a per-upload UUID, then flushed to R2 on finalize.
 # This keeps the API stateless from the client's perspective.

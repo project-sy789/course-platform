@@ -560,6 +560,38 @@ export async function handle(
 				is_active: u.is_active, created_at: u.created_at,
 			})));
 		}
+		{
+			const m = /^\/api\/v1\/admin\/lessons\/([^/]+)$/.exec(path);
+			if (m && (method === "PATCH" || method === "DELETE")) {
+				const lessonId = m[1];
+				let course: MockCourse | undefined;
+				let lessonIdx = -1;
+				for (const c of state.courses) {
+					const i = c.lessons.findIndex((l) => l.id === lessonId);
+					if (i >= 0) { course = c; lessonIdx = i; break; }
+				}
+				if (!course || lessonIdx < 0) return err(404, "ไม่พบบทเรียน");
+				if (method === "DELETE") {
+					course.lessons.splice(lessonIdx, 1);
+					save(state);
+					return ok({ ok: true });
+				}
+				const b = await readJson(init);
+				const lesson = course.lessons[lessonIdx];
+				if (b.title !== undefined) lesson.title = b.title;
+				if (b.is_preview !== undefined) lesson.is_preview = !!b.is_preview;
+				if (b.price_cents !== undefined) (lesson as any).price_cents = b.price_cents;
+				if (b.position !== undefined && b.position !== lesson.position) {
+					const other = course.lessons.find((l) => l.position === b.position && l.id !== lesson.id);
+					if (other) {
+						other.position = lesson.position;
+					}
+					lesson.position = b.position;
+				}
+				save(state);
+				return ok({ ok: true });
+			}
+		}
 		if (method === "POST" && path === "/api/v1/admin/courses") {
 			const b = await readJson(init);
 			const c: MockCourse = {
