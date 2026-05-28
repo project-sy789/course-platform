@@ -54,5 +54,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          wranglerVersion: "3.114.1"
           workingDirectory: frontend
-          command: pages deploy .vercel/output/static --project-name=course-platform --branch=${{ github.head_ref || github.ref_name }}
+          packageManager: npm
+          command: pages deploy .vercel/output/static --project-name=course-platform --branch=${{ github.head_ref || github.ref_name }} --commit-dirty=true
