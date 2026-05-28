@@ -8,13 +8,14 @@ import {
   Button, ErrorNote, Field, Input, Loading, Page, PageTitle, Pill, Section,
   TD, TH, THead, TR, Table,
 } from "@/components/ui";
+import { CourseCover } from "@/components/CourseCover";
 
 type Lesson = {
   id: string;
   title: string;
   position: number;
   is_preview: boolean;
-  price_cents?: number;
+  price_baht?: number;
 };
 
 type CourseDetail = {
@@ -22,16 +23,18 @@ type CourseDetail = {
   slug: string;
   title: string;
   description?: string;
-  price_cents: number;
+  price_baht: number;
   access_duration_days?: number | null;
   pixel_watermark?: boolean;
+  is_featured?: boolean;
+  cover_url?: string | null;
   lessons: Lesson[];
 };
 
 type EditForm = {
   title: string;
   is_preview: boolean;
-  price_cents: number;
+  price_baht: number;
 };
 
 type Material = {
@@ -56,12 +59,77 @@ export default function AdminCourseDetailPage({ params }: { params: { slug: stri
   const [matsBusy, setMatsBusy] = useState(false);
   const [matsError, setMatsError] = useState<string | null>(null);
 
+  const [courseMats, setCourseMats] = useState<Material[]>([]);
+  const [courseMatsBusy, setCourseMatsBusy] = useState(false);
+  const [courseMatsError, setCourseMatsError] = useState<string | null>(null);
+
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
+
+  const [featuredBusy, setFeaturedBusy] = useState(false);
+  const [featuredError, setFeaturedError] = useState<string | null>(null);
+
+  async function toggleFeatured() {
+    if (!course) return;
+    setFeaturedBusy(true); setFeaturedError(null);
+    try {
+      await adminApi.updateCourse(params.slug, { is_featured: !course.is_featured });
+      await reload();
+    } catch (e: any) { setFeaturedError(e.message); }
+    finally { setFeaturedBusy(false); }
+  }
+
+  async function uploadCover(file: File | null) {
+    if (!file) return;
+    setCoverBusy(true); setCoverError(null);
+    try {
+      await adminApi.uploadCourseCover(params.slug, file);
+      await reload();
+    } catch (e: any) { setCoverError(e.message); }
+    finally { setCoverBusy(false); }
+  }
+
+  async function removeCover() {
+    if (!window.confirm("ลบรูปปกคอร์สนี้ ?")) return;
+    setCoverBusy(true); setCoverError(null);
+    try {
+      await adminApi.deleteCourseCover(params.slug);
+      await reload();
+    } catch (e: any) { setCoverError(e.message); }
+    finally { setCoverBusy(false); }
+  }
+
   const reload = () =>
     apiFetch<CourseDetail>(`/api/v1/courses/${params.slug}`)
       .then(setCourse)
       .catch((e: ApiError) => setError(e?.message ?? "failed"));
 
-  useEffect(() => { reload(); }, [params.slug]);
+  const reloadCourseMats = () =>
+    adminApi.listCourseMaterials(params.slug)
+      .then(setCourseMats)
+      .catch((e: any) => setCourseMatsError(e.message));
+
+  useEffect(() => { reload(); reloadCourseMats(); }, [params.slug]);
+
+  async function uploadCourseMaterial(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setCourseMatsBusy(true); setCourseMatsError(null);
+    try {
+      for (const f of Array.from(files)) {
+        await adminApi.uploadCourseMaterial(params.slug, f);
+      }
+      await reloadCourseMats();
+    } catch (e: any) { setCourseMatsError(e.message); }
+    finally { setCourseMatsBusy(false); }
+  }
+
+  async function removeCourseMaterial(id: string, filename: string) {
+    if (!window.confirm(`ลบเอกสาร "${filename}" ?`)) return;
+    try {
+      await adminApi.deleteMaterial(id);
+      await reloadCourseMats();
+    } catch (e: any) { window.alert(e.message); }
+  }
 
   function startEdit(l: Lesson) {
     setEditingId(l.id);
@@ -69,7 +137,7 @@ export default function AdminCourseDetailPage({ params }: { params: { slug: stri
     setEditForm({
       title: l.title,
       is_preview: l.is_preview,
-      price_cents: l.price_cents ?? 0,
+      price_baht: l.price_baht ?? 0,
     });
   }
 
@@ -86,7 +154,7 @@ export default function AdminCourseDetailPage({ params }: { params: { slug: stri
       await adminApi.updateLesson(id, {
         title: editForm.title,
         is_preview: editForm.is_preview,
-        price_cents: Number(editForm.price_cents) || 0,
+        price_baht: Number(editForm.price_baht) || 0,
       });
       await reload();
       cancelEdit();
@@ -168,15 +236,138 @@ export default function AdminCourseDetailPage({ params }: { params: { slug: stri
       <PageTitle kicker={`Slug · ${course.slug}`}>{course.title}</PageTitle>
 
       <div className="border-y border-rule py-4 mb-10 grid grid-cols-2 sm:grid-cols-4 gap-6">
-        <KV label="ราคา" value={course.price_cents === 0 ? "ฟรี" : formatTHB(course.price_cents)} />
+        <KV label="ราคา" value={course.price_baht === 0 ? "ฟรี" : formatTHB(course.price_baht)} />
         <KV label="ระยะเวลาเข้าถึง" value={course.access_duration_days == null ? "ตลอดชีพ" : `${course.access_duration_days} วัน`} />
         <KV label="ลายน้ำพิกเซล" value={course.pixel_watermark ? "เปิด" : "ปิด"} />
         <KV label="บทเรียน" value={`${course.lessons.length} บท`} />
       </div>
 
       <Section
+        title="เด่นในหน้าแรก"
+        hint="ติ๊กไว้เพื่อให้คอร์สนี้ปรากฏใน 'คอร์สแนะนำ — ฉบับเปิดเล่ม' ที่หมุนสลับบนหน้าแรก"
+      >
+        <div className="flex items-center gap-5 flex-wrap">
+          <button
+            onClick={toggleFeatured}
+            disabled={featuredBusy}
+            aria-pressed={!!course.is_featured}
+            className={`inline-flex items-center gap-3 border-2 px-4 py-2 text-[12px] uppercase tracking-[0.18em] transition disabled:opacity-50 ${
+              course.is_featured
+                ? "border-oxblood bg-oxblood text-paper hover:bg-ink hover:border-ink"
+                : "border-ink bg-paper text-ink hover:bg-ink hover:text-paper"
+            }`}
+          >
+            <span className={`w-3 h-3 border ${course.is_featured ? "bg-paper border-paper" : "border-ink"}`} />
+            {course.is_featured ? "อยู่ในเสาแนะนำ" : "เพิ่มเข้าเสาแนะนำ"}
+          </button>
+          <p className="text-[12px] text-muted italic max-w-prose">
+            {course.is_featured
+              ? "กดอีกครั้งเพื่อเอาออก — ระบบหมุนแสดงสูงสุด ๓ คอร์สที่ติ๊กล่าสุด"
+              : "ถ้าไม่มีคอร์สใดถูกติ๊ก หน้าแรกจะใช้ ๓ คอร์สที่สร้างล่าสุดเป็นค่า fallback"}
+          </p>
+        </div>
+        <ErrorNote>{featuredError}</ErrorNote>
+      </Section>
+
+      <Section
+        title="รูปปกคอร์ส"
+        hint="แสดงบนหน้าแรก, สารบัญ และหน้าคอร์ส — ถ้ายังไม่อัป จะใช้ปก generated อัตโนมัติ"
+      >
+        <div className="grid sm:grid-cols-[12rem_1fr] gap-6 items-start">
+          <CourseCover
+            slug={course.slug}
+            title={course.title}
+            variant="card"
+            coverUrl={course.cover_url ? `${course.cover_url}?v=${Date.now()}` : null}
+            className="w-48 aspect-[3/4] shadow-[0_1px_8px_rgba(28,24,20,0.10)]"
+          />
+          <div>
+            <p className="text-[13px] text-muted leading-relaxed mb-4 max-w-prose">
+              อัปโหลดไฟล์ JPG / PNG / WebP ขนาดไม่เกิน ๕ MB
+              สัดส่วนแนะนำ ๓:๔ (เช่น 900×1200) — ระบบจะแสดงเต็มกรอบเสมอ
+            </p>
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="inline-flex items-center gap-3 cursor-pointer">
+                <span className="border-2 border-ink px-4 py-2 text-[12px] uppercase tracking-[0.18em] hover:bg-ink hover:text-paper transition">
+                  {coverBusy ? "กำลังอัปโหลด…" : course.cover_url ? "เปลี่ยนรูปปก →" : "เลือกรูปปก →"}
+                </span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={coverBusy}
+                  onChange={(e) => {
+                    uploadCover(e.target.files?.[0] ?? null);
+                    e.target.value = "";
+                  }}
+                  className="sr-only"
+                />
+              </label>
+              {course.cover_url && (
+                <button
+                  onClick={removeCover}
+                  disabled={coverBusy}
+                  className="text-[13px] text-oxblood hover:underline underline-offset-4 decoration-1 disabled:opacity-50"
+                >
+                  ลบรูปปก
+                </button>
+              )}
+            </div>
+            <ErrorNote>{coverError}</ErrorNote>
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="เอกสารระดับคอร์ส"
+        hint="ใช้ร่วมกันทั้งคอร์ส — ผู้เรียนทุกคนที่ลงทะเบียนเห็น (ไม่ผูกกับบทเรียนใดบทหนึ่ง)"
+      >
+        {courseMats.length === 0 ? (
+          <p className="text-[13px] text-muted italic mb-4">
+            ยังไม่มีเอกสารระดับคอร์ส — เหมาะกับ syllabus, ใบงานสรุป, บรรณานุกรมที่ใช้ทั้งคอร์ส
+          </p>
+        ) : (
+          <ul className="border-t border-rule mb-4">
+            {courseMats.map((m) => (
+              <li key={m.id} className="border-b border-rule grid grid-cols-[1fr_auto_auto] gap-4 py-2 items-baseline">
+                <span className="font-display text-[14px]">{m.filename}</span>
+                <span className="font-mono text-[11px] text-muted">
+                  {m.content_type} · {formatBytes(m.size_bytes)}
+                </span>
+                <button
+                  onClick={() => removeCourseMaterial(m.id, m.filename)}
+                  className="text-[12px] text-oxblood hover:underline underline-offset-4 decoration-1"
+                >
+                  ลบ
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <label className="inline-flex items-center gap-3 cursor-pointer">
+          <span className="border-2 border-ink px-4 py-2 text-[12px] uppercase tracking-[0.18em] hover:bg-ink hover:text-paper transition">
+            {courseMatsBusy ? "กำลังอัปโหลด…" : "เลือกไฟล์อัปโหลด →"}
+          </span>
+          <input
+            type="file" multiple
+            accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,image/*"
+            disabled={courseMatsBusy}
+            onChange={(e) => {
+              uploadCourseMaterial(e.target.files);
+              e.target.value = "";
+            }}
+            className="sr-only"
+          />
+          <span className="text-[12px] text-muted italic">
+            หลายไฟล์ในครั้งเดียวได้ · ไม่เกิน ๕๐ MB ต่อไฟล์
+          </span>
+        </label>
+        <ErrorNote>{courseMatsError}</ErrorNote>
+      </Section>
+
+      <Section
         title="บทเรียน"
-        hint="แก้ไขชื่อ · เปิด/ปิดตัวอย่าง · ตั้งราคาแยก · เรียงลำดับ · ลบ"
+        hint="แก้ไขชื่อ · เปิด/ปิดตัวอย่าง · ตั้งราคาแยก · เรียงลำดับ · เอกสารแนบ · ลบ"
       >
         <div className="text-[12px] text-muted leading-relaxed mb-4 max-w-prose italic">
           การเพิ่มบทเรียนใหม่ใช้หน้า{" "}
@@ -212,8 +403,8 @@ export default function AdminCourseDetailPage({ params }: { params: { slug: stri
                         : <Pill tone="neutral">เฉพาะผู้ลงทะเบียน</Pill>}
                     </TD>
                     <TD className="font-mono text-[13px]">
-                      {l.price_cents && l.price_cents > 0
-                        ? formatTHB(l.price_cents)
+                      {l.price_baht && l.price_baht > 0
+                        ? formatTHB(l.price_baht)
                         : <span className="text-muted">—</span>}
                     </TD>
                     <TD className="text-right whitespace-nowrap">
@@ -260,10 +451,10 @@ export default function AdminCourseDetailPage({ params }: { params: { slug: stri
                             <Input value={editForm.title}
                               onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
                           </Field>
-                          <Field label="ราคาแยก (สตางค์)" hint="0 = ขายเฉพาะผ่านคอร์ส">
+                          <Field label="ราคาแยก (บาท)" hint="0 = ขายเฉพาะผ่านคอร์ส">
                             <Input type="number" min={0} className="font-mono"
-                              value={editForm.price_cents}
-                              onChange={(e) => setEditForm({ ...editForm, price_cents: Number(e.target.value) })} />
+                              value={editForm.price_baht}
+                              onChange={(e) => setEditForm({ ...editForm, price_baht: Number(e.target.value) })} />
                           </Field>
                           <label className="flex items-start gap-3 text-[14px] cursor-pointer pt-7 sm:col-span-2">
                             <input type="checkbox" checked={editForm.is_preview}

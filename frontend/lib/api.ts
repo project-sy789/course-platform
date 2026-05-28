@@ -143,12 +143,67 @@ export async function uploadSlip(opts: {
   image: File;
   course_slug?: string;
   lesson_id?: string;
+  coupon_code?: string;
 }): Promise<SlipUploadResult> {
   const form = new FormData();
   form.append("image", opts.image);
   if (opts.course_slug) form.append("course_slug", opts.course_slug);
   if (opts.lesson_id) form.append("lesson_id", opts.lesson_id);
+  if (opts.coupon_code) form.append("coupon_code", opts.coupon_code);
   const res = await fetch(`${API}/api/v1/slip-payments/upload`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "X-Device-Id": getDeviceId() },
+    body: form,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* ignore */ }
+    throw new ApiError(res.status, detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export type CartItem = { course_id?: string; lesson_id?: string };
+
+export type OrderQuoteLine = {
+  course_id: string | null;
+  lesson_id: string | null;
+  title: string;
+  unit_price_baht: number;
+  line_discount_baht: number;
+  line_final_baht: number;
+};
+
+export type OrderQuote = {
+  lines: OrderQuoteLine[];
+  subtotal_baht: number;
+  discount_baht: number;
+  final_baht: number;
+  coupon: { code: string; discount_baht: number } | null;
+  coupon_reason: string | null;
+};
+
+export function quoteOrder(items: CartItem[], code?: string) {
+  return apiFetch<OrderQuote>("/api/v1/orders/quote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items, code: code ?? null }),
+  });
+}
+
+export type OrderUploadResult = SlipUploadResult & { order_id: string };
+
+export async function uploadSlipOrder(opts: {
+  items: CartItem[];
+  image?: File | null;
+  coupon_code?: string;
+}): Promise<OrderUploadResult> {
+  const form = new FormData();
+  form.append("items_json", JSON.stringify(opts.items));
+  if (opts.coupon_code) form.append("coupon_code", opts.coupon_code);
+  if (opts.image) form.append("image", opts.image);
+  const res = await fetch(`${API}/api/v1/slip-payments/upload-order`, {
     method: "POST",
     credentials: "include",
     headers: { "X-Device-Id": getDeviceId() },

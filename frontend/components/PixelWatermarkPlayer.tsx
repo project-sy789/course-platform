@@ -87,7 +87,7 @@ export default function PixelWatermarkPlayer({
           }
         }
         hls = new Hls({
-          loader: KeyLoader,
+          loader: KeyLoader as unknown as HlsConfig["loader"],
           xhrSetup: (xhr, url) => {
             if (url.startsWith(API) || url.startsWith("/")) {
               xhr.withCredentials = true;

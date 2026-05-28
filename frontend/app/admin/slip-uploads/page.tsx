@@ -9,7 +9,7 @@ import {
 type Slip = {
   id: string;
   user_email: string | null;
-  amount_cents: number;
+  amount_baht: number;
   status: string;
   target: { type: string; title: string; slug?: string } | null;
   slip_ref: string | null;
@@ -115,7 +115,7 @@ export default function AdminSlipsPage() {
                     {s.user_email ?? "— (ผู้ใช้ถูกลบ)"}
                   </p>
                   <p className="font-mono tabular-nums text-[18px] whitespace-nowrap">
-                    {formatTHB(s.amount_cents)}
+                    {formatTHB(s.amount_baht)}
                   </p>
                 </div>
                 {s.target && (

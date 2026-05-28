@@ -300,13 +300,14 @@ export function TH({ children, className = "" }: { children: ReactNode; classNam
   );
 }
 
-export function TD({ children, className = "", colSpan }: {
+export function TD({ children, className = "", colSpan, title }: {
   children: ReactNode;
   className?: string;
   colSpan?: number;
+  title?: string;
 }) {
   return (
-    <td colSpan={colSpan} className={`py-3 px-3 align-top ${className}`}>
+    <td colSpan={colSpan} title={title} className={`py-3 px-3 align-top ${className}`}>
       {children}
     </td>
   );

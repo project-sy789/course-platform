@@ -186,7 +186,7 @@ def export_my_data(
             {
                 "id": str(p.id),
                 "course_id": str(p.course_id),
-                "amount_cents": p.amount_cents,
+                "amount_baht": p.amount_baht,
                 "currency": p.currency,
                 "status": p.status,
                 "stripe_session_id": p.stripe_session_id,

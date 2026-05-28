@@ -14,7 +14,7 @@ type Course = {
   slug: string;
   title: string;
   description?: string;
-  price_cents: number;
+  price_baht: number;
   access_duration_days?: number | null;
   pixel_watermark?: boolean;
 };
@@ -22,7 +22,7 @@ type Course = {
 type EditForm = {
   title: string;
   description: string;
-  price_cents: number;
+  price_baht: number;
   access_duration_days: string;
   pixel_watermark: boolean;
 };
@@ -30,7 +30,7 @@ type EditForm = {
 export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [form, setForm] = useState({
-    slug: "", title: "", description: "", price_cents: 0,
+    slug: "", title: "", description: "", price_baht: 0,
     access_duration_days: "" as string,
     pixel_watermark: false,
   });
@@ -56,12 +56,12 @@ export default function AdminCoursesPage() {
         slug: form.slug,
         title: form.title,
         description: form.description || undefined,
-        price_cents: Number(form.price_cents) || 0,
+        price_baht: Number(form.price_baht) || 0,
         access_duration_days: dur === "" ? null : Number(dur),
         pixel_watermark: form.pixel_watermark,
       });
       setForm({
-        slug: "", title: "", description: "", price_cents: 0,
+        slug: "", title: "", description: "", price_baht: 0,
         access_duration_days: "", pixel_watermark: false,
       });
       await reload();
@@ -75,7 +75,7 @@ export default function AdminCoursesPage() {
     setEditForm({
       title: c.title,
       description: c.description ?? "",
-      price_cents: c.price_cents,
+      price_baht: c.price_baht,
       access_duration_days: c.access_duration_days == null ? "" : String(c.access_duration_days),
       pixel_watermark: !!c.pixel_watermark,
     });
@@ -95,7 +95,7 @@ export default function AdminCoursesPage() {
       await adminApi.updateCourse(slug, {
         title: editForm.title,
         description: editForm.description,
-        price_cents: Number(editForm.price_cents) || 0,
+        price_baht: Number(editForm.price_baht) || 0,
         access_duration_days: dur === "" ? null : Number(dur),
         pixel_watermark: editForm.pixel_watermark,
       });
@@ -134,9 +134,9 @@ export default function AdminCoursesPage() {
             <Textarea rows={3} value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </Field>
-          <Field label="ราคา (สตางค์)" hint="๑๐๐ สตางค์ = ๑ บาท · กรอก 0 เพื่อให้เรียนฟรี">
-            <Input type="number" min={0} value={form.price_cents} className="font-mono"
-              onChange={(e) => setForm({ ...form, price_cents: Number(e.target.value) })} />
+          <Field label="ราคา (บาท)" hint="กรอกเป็นจำนวนเต็ม · 0 = เรียนฟรี">
+            <Input type="number" min={0} value={form.price_baht} className="font-mono"
+              onChange={(e) => setForm({ ...form, price_baht: Number(e.target.value) })} />
           </Field>
           <Field label="ระยะเวลาเข้าถึง (วัน)" hint="ปล่อยว่างเพื่อให้เข้าถึงได้ตลอดชีพ">
             <Input type="number" min={1} placeholder="ว่าง = ตลอดชีพ"
@@ -189,7 +189,7 @@ export default function AdminCoursesPage() {
                     <TD className="font-mono text-[12px]">{c.slug}</TD>
                     <TD className="font-display text-[15px]">{c.title}</TD>
                     <TD className="font-mono">
-                      {c.price_cents === 0 ? "ฟรี" : formatTHB(c.price_cents)}
+                      {c.price_baht === 0 ? "ฟรี" : formatTHB(c.price_baht)}
                     </TD>
                     <TD>
                       {c.access_duration_days == null
@@ -241,10 +241,10 @@ export default function AdminCoursesPage() {
                             <Input value={editForm.title}
                               onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
                           </Field>
-                          <Field label="ราคา (สตางค์)">
+                          <Field label="ราคา (บาท)">
                             <Input type="number" min={0} className="font-mono"
-                              value={editForm.price_cents}
-                              onChange={(e) => setEditForm({ ...editForm, price_cents: Number(e.target.value) })} />
+                              value={editForm.price_baht}
+                              onChange={(e) => setEditForm({ ...editForm, price_baht: Number(e.target.value) })} />
                           </Field>
                           <div className="sm:col-span-2">
                             <Field label="คำอธิบาย">

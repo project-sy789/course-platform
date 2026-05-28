@@ -23,6 +23,44 @@ from ..models import Course, Lesson, LessonProgress, User
 
 router = APIRouter(prefix="/api/v1", tags=["progress"])
 
+
+@router.get("/account/resume")
+def resume_from(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_session),
+):
+    """Most-recent in-progress lesson for the current user, if any. Powers
+    the sticky 'เรียนต่อ' bar in the public chrome — returns 204 when there's
+    nothing to resume so the bar stays hidden."""
+    row = db.execute(
+        select(LessonProgress, Lesson, Course)
+        .join(Lesson, Lesson.id == LessonProgress.lesson_id)
+        .join(Course, Course.id == Lesson.course_id)
+        .where(
+            LessonProgress.user_id == user.id,
+            LessonProgress.completed == False,  # noqa: E712
+            LessonProgress.position_seconds > 0,
+        )
+        .order_by(LessonProgress.updated_at.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    lp, lesson, course = row
+    pct = (
+        int(round((lp.position_seconds / lp.duration_seconds) * 100))
+        if lp.duration_seconds > 0 else 0
+    )
+    return {
+        "course_slug": course.slug,
+        "course_title": course.title,
+        "lesson_id": str(lesson.id),
+        "lesson_title": lesson.title,
+        "lesson_position": lesson.position,
+        "watched_pct": pct,
+        "updated_at": lp.updated_at.isoformat(),
+    }
+
 COMPLETION_RATIO = 0.9
 
 

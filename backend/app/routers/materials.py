@@ -27,6 +27,8 @@ from ..db import get_session
 from ..deps import current_admin, current_user, require_enrollment_for_video
 from ..logging import log
 from ..models import Lesson, LessonMaterial, MaterialDownloadLog, User
+from ..models import Course, Enrollment
+import datetime as dt
 from ..r2 import delete_object, get_bytes, upload_bytes
 from ..watermark import (
     new_watermark_id,
@@ -202,10 +204,14 @@ def download_material(
     row = db.get(LessonMaterial, material_id)
     if not row:
         raise HTTPException(404, "not found")
-    lesson = db.get(Lesson, row.lesson_id)
-    if not lesson:
-        raise HTTPException(404, "lesson missing")
-    require_enrollment_for_video(str(lesson.video_id), user, db)
+    if row.lesson_id is not None:
+        lesson = db.get(Lesson, row.lesson_id)
+        if not lesson:
+            raise HTTPException(404, "lesson missing")
+        require_enrollment_for_video(str(lesson.video_id), user, db)
+    else:
+        # Course-scoped material: gate on an active enrollment for the course.
+        _require_active_enrollment(row.course_id, user, db)
 
     raw = get_bytes(row.r2_key)
     watermark_id = new_watermark_id()
@@ -255,3 +261,114 @@ def download_material(
             "X-Watermark-Id": watermark_id,
         },
     )
+
+
+# ---------- Course-scoped materials ----------
+# Same `lesson_materials` table; row distinguished by which scope column
+# is set (CHECK constraint on the table makes that exactly-one).
+
+def _require_active_enrollment(course_id, user: User, db: Session) -> Course:
+    course = db.get(Course, course_id) if course_id else None
+    if not course:
+        raise HTTPException(404, "course not found")
+    now = dt.datetime.now(dt.timezone.utc)
+    enr = db.scalar(
+        select(Enrollment).where(
+            Enrollment.user_id == user.id,
+            Enrollment.course_id == course.id,
+        )
+    )
+    if not enr:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not enrolled")
+    if enr.expires_at is not None and enr.expires_at <= now:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "enrollment expired")
+    return course
+
+
+@router.post("/admin/courses/{slug}/materials", status_code=201)
+async def admin_upload_course_material(
+    slug: str,
+    file: UploadFile = File(...),
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    course = db.scalar(select(Course).where(Course.slug == slug))
+    if not course:
+        raise HTTPException(404, "course not found")
+    if not file.filename:
+        raise HTTPException(400, "missing filename")
+
+    data = await file.read(MAX_MATERIAL_BYTES + 1)
+    if len(data) > MAX_MATERIAL_BYTES:
+        raise HTTPException(413, f"file exceeds {MAX_MATERIAL_BYTES} bytes")
+
+    safe_leaf = file.filename.replace("/", "_").replace("\\", "_")
+    material_id = uuid.uuid4()
+    r2_key = f"course-materials/{course.id}/{material_id}/{safe_leaf}"
+    upload_bytes(r2_key, data, file.content_type or "application/octet-stream")
+
+    row = LessonMaterial(
+        id=material_id,
+        course_id=course.id,
+        filename=safe_leaf,
+        content_type=file.content_type or "application/octet-stream",
+        size_bytes=len(data),
+        r2_key=r2_key,
+    )
+    db.add(row); db.commit()
+    return {
+        "id": str(row.id),
+        "filename": row.filename,
+        "size_bytes": row.size_bytes,
+        "content_type": row.content_type,
+    }
+
+
+@router.get("/admin/courses/{slug}/materials")
+def admin_list_course_materials(
+    slug: str,
+    _: User = Depends(current_admin),
+    db: Session = Depends(get_session),
+):
+    course = db.scalar(select(Course).where(Course.slug == slug))
+    if not course:
+        raise HTTPException(404, "course not found")
+    rows = db.scalars(
+        select(LessonMaterial)
+        .where(LessonMaterial.course_id == course.id)
+        .order_by(LessonMaterial.created_at.asc())
+    ).all()
+    return [
+        {
+            "id": str(r.id),
+            "filename": r.filename,
+            "content_type": r.content_type,
+            "size_bytes": r.size_bytes,
+            "created_at": r.created_at.isoformat(),
+        } for r in rows
+    ]
+
+
+@router.get("/courses/{slug}/materials")
+def list_course_materials(
+    slug: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_session),
+):
+    course = db.scalar(select(Course).where(Course.slug == slug))
+    if not course:
+        raise HTTPException(404, "course not found")
+    _require_active_enrollment(course.id, user, db)
+    rows = db.scalars(
+        select(LessonMaterial)
+        .where(LessonMaterial.course_id == course.id)
+        .order_by(LessonMaterial.created_at.asc())
+    ).all()
+    return [
+        {
+            "id": str(r.id),
+            "filename": r.filename,
+            "content_type": r.content_type,
+            "size_bytes": r.size_bytes,
+        } for r in rows
+    ]

@@ -1,0 +1,17 @@
+# Cloudflare Pages config for the Next.js frontend.
+#
+# Two deploy paths use this file:
+#   1. The GitHub Actions workflow (.github/workflows/pages.yml) — runs
+#      `wrangler pages deploy` after `pages:build`.
+#   2. Local one-shot deploys via `npm run pages:deploy` from this folder.
+#
+# `pages_build_output_dir` is the directory `@cloudflare/next-on-pages`
+# emits — don't change without updating the matching script in package.json.
+#
+# `nodejs_compat` is required: even though most pages are client-only,
+# next-on-pages' runtime shim imports a few Node built-ins (Buffer, etc).
+
+name = "course-platform"
+pages_build_output_dir = ".vercel/output/static"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]

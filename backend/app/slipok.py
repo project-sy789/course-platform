@@ -21,9 +21,11 @@ import json
 from dataclasses import dataclass
 
 import httpx
+from sqlalchemy.orm import Session
 
 from .config import settings
 from .logging import log
+from .settings_db import get_payment_settings
 
 
 SLIPOK_BASE = "https://api.slipok.com/api/line/apikey"
@@ -35,17 +37,18 @@ class SlipVerifyResult:
     auto_approve: bool
     raw: dict
     slip_ref: str | None
-    amount_satang: int | None
+    amount_baht: int | None
     receiver_account: str | None
     reason: str  # human-readable, ends up in admin UI + ledger
 
 
-def configured() -> bool:
-    return bool(settings.SLIPOK_API_KEY and settings.SLIPOK_BRANCH_ID)
+def configured(db: Session) -> bool:
+    return get_payment_settings(db).slipok_enabled
 
 
 async def verify_slip(image_bytes: bytes, filename: str,
-                      expected_amount_satang: int) -> SlipVerifyResult:
+                      expected_amount_baht: int,
+                      db: Session) -> SlipVerifyResult:
     """POST the image to SlipOK and decide whether to auto-approve.
 
     Auto-approval requires ALL of:
@@ -56,15 +59,16 @@ async def verify_slip(image_bytes: bytes, filename: str,
 
     Anything else returns ok=True (no error) but auto_approve=False so the
     upload row stays 'pending' for admin review."""
-    if not configured():
+    pcfg = get_payment_settings(db)
+    if not pcfg.slipok_enabled:
         return SlipVerifyResult(
             ok=True, auto_approve=False, raw={}, slip_ref=None,
-            amount_satang=None, receiver_account=None,
+            amount_baht=None, receiver_account=None,
             reason="slipok_disabled",
         )
 
-    url = f"{SLIPOK_BASE}/{settings.SLIPOK_BRANCH_ID}"
-    headers = {"x-authorization": settings.SLIPOK_API_KEY}
+    url = f"{SLIPOK_BASE}/{pcfg.slipok_branch_id}"
+    headers = {"x-authorization": pcfg.slipok_api_key}
     try:
         async with httpx.AsyncClient(timeout=15.0) as cx:
             r = await cx.post(
@@ -76,7 +80,7 @@ async def verify_slip(image_bytes: bytes, filename: str,
         log.warning("slipok_http_error", error=str(e))
         return SlipVerifyResult(
             ok=False, auto_approve=False, raw={}, slip_ref=None,
-            amount_satang=None, receiver_account=None,
+            amount_baht=None, receiver_account=None,
             reason=f"slipok_unreachable:{type(e).__name__}",
         )
 
@@ -86,25 +90,26 @@ async def verify_slip(image_bytes: bytes, filename: str,
         log.info("slipok_rejected", status=r.status_code, body=raw)
         return SlipVerifyResult(
             ok=True, auto_approve=False, raw=raw, slip_ref=None,
-            amount_satang=None, receiver_account=None,
+            amount_baht=None, receiver_account=None,
             reason=f"slipok_no_match:{raw.get('code') or r.status_code}",
         )
 
     data = raw.get("data") or {}
-    # SlipOK fields are documented in baht — we store satang internally.
+    # SlipOK returns amount in baht (float). Round to whole baht — we no
+    # longer track sub-baht.
     try:
-        amount_satang = int(round(float(data.get("amount", 0)) * 100))
+        amount_baht = int(round(float(data.get("amount", 0))))
     except (TypeError, ValueError):
-        amount_satang = None
+        amount_baht = None
     slip_ref = data.get("transRef") or data.get("ref") or None
     receiver = (data.get("receiver") or {})
     recv_account = (receiver.get("account") or {}).get("value") or receiver.get("displayName") or None
 
-    tol = settings.SLIPOK_AMOUNT_TOLERANCE_SATANG
-    expected_account = settings.RECEIVER_BANK_ACCOUNT.replace("-", "").replace(" ", "")
+    tol = settings.SLIPOK_AMOUNT_TOLERANCE_BAHT
+    expected_account = pcfg.receiver_bank_account.replace("-", "").replace(" ", "")
     got_account = (recv_account or "").replace("-", "").replace(" ", "").replace("x", "").replace("X", "")
 
-    amount_ok = amount_satang is not None and amount_satang >= expected_amount_satang - tol
+    amount_ok = amount_baht is not None and amount_baht >= expected_amount_baht - tol
     # Banks mask middle digits like "xxx-x-x1234-x" — match on the trailing
     # 4-6 digits, which is what's actually visible in their slips.
     tail_match = bool(expected_account) and bool(got_account) and \
@@ -117,6 +122,6 @@ async def verify_slip(image_bytes: bytes, filename: str,
 
     return SlipVerifyResult(
         ok=True, auto_approve=auto, raw=raw,
-        slip_ref=slip_ref, amount_satang=amount_satang,
+        slip_ref=slip_ref, amount_baht=amount_baht,
         receiver_account=recv_account, reason=reason,
     )

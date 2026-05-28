@@ -61,7 +61,7 @@ async def test_admin_grant_sets_expiry_from_course_duration(
 ):
     admin = make_user("admin@example.com", is_admin=True)
     student = make_user("student@example.com")
-    course = Course(slug="paid", title="Paid", price_cents=10000,
+    course = Course(slug="paid", title="Paid", price_baht=10000,
                     access_duration_days=30)
     db.add(course); db.commit()
 
@@ -85,7 +85,7 @@ async def test_admin_grant_lifetime_when_course_has_no_duration(
 ):
     admin = make_user("admin@example.com", is_admin=True)
     student = make_user("student@example.com")
-    course = Course(slug="lifetime", title="Lifetime", price_cents=0,
+    course = Course(slug="lifetime", title="Lifetime", price_baht=0,
                     access_duration_days=None)
     db.add(course); db.commit()
 

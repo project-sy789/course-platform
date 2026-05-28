@@ -56,7 +56,7 @@ def main() -> int:
                 slug=args.course_slug,
                 title=args.course_title,
                 description=args.course_description,
-                price_cents=args.course_price_cents,
+                price_baht=args.course_price_baht,
             )
             db.add(course)
             db.flush()

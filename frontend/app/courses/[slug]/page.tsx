@@ -3,8 +3,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api";
-import { formatTHB } from "@/lib/format";
+import { addToCart, isInCart, subscribe } from "@/lib/cart";
+import { formatTHB, formatBytes } from "@/lib/format";
 import { ErrorNote, Loading, Page, Pill } from "@/components/ui";
+import { CourseCover } from "@/components/CourseCover";
 
 function accessLabel(days: number | null | undefined): string {
   if (days == null) return "เข้าถึงได้ตลอดชีพ";
@@ -18,8 +20,9 @@ type CourseDetail = {
   slug: string;
   title: string;
   description?: string;
-  price_cents: number;
+  price_baht: number;
   access_duration_days?: number | null;
+  cover_url?: string | null;
   lessons: { id: string; title: string; position: number; is_preview: boolean }[];
 };
 
@@ -36,26 +39,43 @@ type CourseProgress = {
   }[];
 };
 
+type CourseMaterial = {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+};
+
 export default function CoursePage({ params }: { params: { slug: string } }) {
   const router = useRouter();
   const [course, setCourse] = useState<CourseDetail | null>(null);
   const [progress, setProgress] = useState<CourseProgress | null>(null);
+  const [materials, setMaterials] = useState<CourseMaterial[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [inCart, setInCart] = useState(false);
 
   useEffect(() => {
     apiFetch<CourseDetail>(`/api/v1/courses/${params.slug}`)
       .then(setCourse)
       .catch((e: ApiError) => setError(e?.message ?? "failed"));
-    // Progress is logged-in-only — silently ignore 401/403 for guests.
     apiFetch<CourseProgress>(`/api/v1/courses/${params.slug}/progress`)
       .then(setProgress)
       .catch(() => setProgress(null));
+    apiFetch<CourseMaterial[]>(`/api/v1/courses/${params.slug}/materials`)
+      .then(setMaterials)
+      .catch(() => setMaterials([]));
   }, [params.slug]);
+
+  useEffect(() => {
+    if (!course) return;
+    setInCart(isInCart({ course_id: course.id }));
+    return subscribe(() => setInCart(isInCart({ course_id: course.id })));
+  }, [course]);
 
   if (error) return <Page><ErrorNote>{error}</ErrorNote></Page>;
   if (!course) return <Page><Loading /></Page>;
 
-  const isFree = course.price_cents === 0;
+  const isFree = course.price_baht === 0;
 
   const progressByLesson = new Map(
     progress?.lessons.map((l) => [l.lesson_id, l]) ?? [],
@@ -77,6 +97,14 @@ export default function CoursePage({ params }: { params: { slug: string } }) {
 
       <article className="grid md:grid-cols-12 gap-8 md:gap-12 pb-10 border-b border-rule">
         <div className="md:col-span-8">
+          <CourseCover
+            slug={course.slug}
+            title={course.title}
+            variant="hero"
+            kicker="คอร์สเรียน"
+            coverUrl={course.cover_url}
+            className="w-full aspect-[3/2] mb-8 shadow-[0_2px_24px_rgba(28,24,20,0.12)]"
+          />
           <div className="text-[11px] uppercase tracking-[0.22em] text-oxblood mb-3">
             คอร์สเรียน
           </div>
@@ -129,7 +157,7 @@ export default function CoursePage({ params }: { params: { slug: string } }) {
               ) : (
                 <>
                   <p className="font-display text-[36px] leading-none font-mono tabular-nums">
-                    {formatTHB(course.price_cents)}
+                    {formatTHB(course.price_baht)}
                   </p>
                   <p className="text-[12px] text-muted mt-1">รวมภาษีมูลค่าเพิ่มแล้ว</p>
                   <button
@@ -138,6 +166,28 @@ export default function CoursePage({ params }: { params: { slug: string } }) {
                   >
                     สั่งซื้อคอร์สนี้ →
                   </button>
+                  {inCart ? (
+                    <button
+                      onClick={() => router.push("/cart")}
+                      className="mt-3 w-full px-4 py-3 text-[13px] uppercase tracking-[0.14em] border border-ink hover:bg-ink hover:text-paper transition"
+                    >
+                      ดูตะกร้า ({"ในตะกร้าแล้ว"})
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        addToCart({
+                          course_id: course.id,
+                          course_slug: course.slug,
+                          course_title: course.title,
+                          unit_price_baht: course.price_baht,
+                        });
+                      }}
+                      className="mt-3 w-full px-4 py-3 text-[13px] uppercase tracking-[0.14em] border border-rule hover:border-ink transition"
+                    >
+                      เพิ่มลงตะกร้า ＋
+                    </button>
+                  )}
                 </>
               )}
             </>
@@ -189,6 +239,46 @@ export default function CoursePage({ params }: { params: { slug: string } }) {
           })}
         </ol>
       </section>
+
+      {materials.length > 0 && (
+        <section className="mt-14">
+          <div className="flex items-baseline gap-4 mb-6">
+            <h2 className="font-display text-2xl">เอกสารคอร์ส</h2>
+            <span className="grow border-t border-rule/40" />
+            <span className="font-mono text-[11px] text-muted">
+              {materials.length.toString().padStart(2, "0")} ไฟล์
+            </span>
+          </div>
+          <ol className="border-t border-rule">
+            {materials.map((m, i) => (
+              <li key={m.id} className="border-b border-rule">
+                <a
+                  href={`/api/v1/materials/${m.id}/download`}
+                  className="grid grid-cols-[3rem_1fr_auto] gap-6 py-4 items-baseline group"
+                >
+                  <span className="font-mono text-muted text-sm tabular-nums">
+                    {(i + 1).toString().padStart(2, "0")}
+                  </span>
+                  <span>
+                    <span className="font-display text-[17px] group-hover:text-oxblood transition-colors">
+                      {m.filename}
+                    </span>
+                    <span className="block text-[11px] text-muted mt-0.5 font-mono">
+                      {m.content_type} · {formatBytes(m.size_bytes)}
+                    </span>
+                  </span>
+                  <span className="text-[11px] uppercase tracking-[0.18em] text-muted whitespace-nowrap">
+                    ดาวน์โหลด →
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-3 text-[12px] italic text-muted">
+            เอกสารระดับคอร์สใช้ร่วมกันทุกบท — ทุกการดาวน์โหลดของท่านมีรหัสกำกับ
+          </p>
+        </section>
+      )}
     </Page>
   );
 }

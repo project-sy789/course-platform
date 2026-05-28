@@ -8,11 +8,15 @@
     "start": "next start",
     "lint": "next lint",
     "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui"
+    "e2e:ui": "playwright test --ui",
+    "pages:build": "npx @cloudflare/next-on-pages@1",
+    "pages:deploy": "wrangler pages deploy .vercel/output/static"
   },
   "dependencies": {
+    "@types/qrcode": "^1.5.6",
     "hls.js": "^1.5.17",
     "next": "14.2.15",
+    "qrcode": "^1.5.4",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },

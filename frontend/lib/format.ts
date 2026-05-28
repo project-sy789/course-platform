@@ -1,18 +1,17 @@
 /**
  * Display helpers — Thai locale, THB currency.
- * Backend stores prices in satang (1 THB = 100 satang) in `price_cents`/`amount_cents`.
- * That column name is a holdover from the original USD design; semantics are now satang.
+ * Backend stores prices as whole baht (integer) in `price_baht`/`amount_baht`.
  */
 
 const THB = new Intl.NumberFormat("th-TH", {
   style: "currency",
   currency: "THB",
   minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 0,
 });
 
-export function formatTHB(satang: number): string {
-  return THB.format(satang / 100);
+export function formatTHB(baht: number): string {
+  return THB.format(baht);
 }
 
 const DATE = new Intl.DateTimeFormat("th-TH", {

@@ -12,7 +12,11 @@ const NAV = [
   { href: "/admin/upload", label: "อัปโหลดวิดีโอ" },
   { href: "/admin/users", label: "ผู้ใช้" },
   { href: "/admin/slip-uploads", label: "ตรวจสลิป" },
+  { href: "/admin/coupons", label: "คูปอง" },
   { href: "/admin/logs", label: "บันทึกคีย์" },
+  { href: "/admin/video-health", label: "สุขภาพวิดีโอ" },
+  { href: "/admin/audit", label: "บันทึกแอดมิน" },
+  { href: "/admin/broadcast", label: "ส่งเมล" },
   { href: "/admin/settings", label: "ตั้งค่า" },
 ];
 

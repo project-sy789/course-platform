@@ -19,13 +19,13 @@ async def test_patch_lesson_renames_and_toggles_preview(
     r = await client.patch(
         f"/api/v1/admin/lessons/{lesson.id}",
         cookies=auth_cookie(str(admin.id)),
-        json={"title": "บทเปลี่ยนชื่อ", "is_preview": True, "price_cents": 9900},
+        json={"title": "บทเปลี่ยนชื่อ", "is_preview": True, "price_baht": 9900},
     )
     assert r.status_code == 200, r.text
     db.refresh(lesson)
     assert lesson.title == "บทเปลี่ยนชื่อ"
     assert lesson.is_preview is True
-    assert lesson.price_cents == 9900
+    assert lesson.price_baht == 9900
 
 
 async def test_patch_lesson_position_swaps_with_occupant(

@@ -53,7 +53,7 @@ export default function SecurePlayer({ videoId, lessonId }: Props) {
         let currentSess: PlaybackSession = sess;
 
         hls = new Hls({
-          loader: KeyRewritingLoader,
+          loader: KeyRewritingLoader as unknown as HlsConfig["loader"],
           xhrSetup: (xhr, url) => {
             if (url.startsWith(API) || url.startsWith("/")) {
               xhr.withCredentials = true;

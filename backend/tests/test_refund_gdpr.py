@@ -19,12 +19,12 @@ def _seed_paid_payment(db, make_user):
     """user + course + enrollment + a paid Payment row."""
     from app.models import Course
     user = make_user("alice@example.com")
-    course = Course(slug="paid", title="Paid", price_cents=2000)
+    course = Course(slug="paid", title="Paid", price_baht=2000)
     db.add(course); db.flush()
     db.add(Enrollment(user_id=user.id, course_id=course.id))
     payment = Payment(
         user_id=user.id, course_id=course.id,
-        amount_cents=2000, currency="thb", status="paid",
+        amount_baht=2000, currency="thb", status="paid",
         payment_method="slip_manual",
     )
     db.add(payment); db.commit()
@@ -76,11 +76,11 @@ async def test_admin_refund_rejects_non_paid(
     from app.models import Course
     admin = make_user("a@example.com", is_admin=True)
     user = make_user("u@example.com")
-    course = Course(slug="p", title="P", price_cents=1000)
+    course = Course(slug="p", title="P", price_baht=1000)
     db.add(course); db.flush()
     pending = Payment(
         user_id=user.id, course_id=course.id,
-        amount_cents=1000, currency="thb", status="pending",
+        amount_baht=1000, currency="thb", status="pending",
         payment_method="slip_manual",
     )
     db.add(pending); db.commit()

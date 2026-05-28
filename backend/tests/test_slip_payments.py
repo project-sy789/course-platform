@@ -25,7 +25,7 @@ pytestmark = pytest.mark.asyncio
 
 def _make_course(db, price=99900):
     from app.models import Course
-    c = Course(slug="c1", title="Course 1", price_cents=price)
+    c = Course(slug="c1", title="Course 1", price_baht=price)
     db.add(c); db.commit()
     return c
 
@@ -33,7 +33,7 @@ def _make_course(db, price=99900):
 def _slipok_result(*, auto, ref="REF-123", amount=99900, reason="ok"):
     return slipok.SlipVerifyResult(
         ok=True, auto_approve=auto, raw={"data": {"transRef": ref}},
-        slip_ref=ref, amount_satang=amount, receiver_account="xxx1234",
+        slip_ref=ref, amount_baht=amount, receiver_account="xxx1234",
         reason=reason,
     )
 

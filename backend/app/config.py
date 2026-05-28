@@ -34,9 +34,17 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_BACKUP_STORAGE_CLASS: str = "DEEP_ARCHIVE"
 
-    # Email (SMTP). Default targets the in-stack Postfix container; switch
-    # SMTP_HOST to a managed provider (Resend/Postmark/SES) any time without
-    # touching code — the relay is a deploy concern, not an app concern.
+    # Email — provider-agnostic. EMAIL_PROVIDER picks the transport:
+    #   smtp     — classic SMTP (Postfix in-cluster, or any external relay)
+    #   resend   — Resend HTTP API   (header: Authorization: Bearer …)
+    #   postmark — Postmark HTTP API (header: X-Postmark-Server-Token)
+    #   sendgrid — SendGrid v3 HTTP API
+    #   disabled — no-op (logs and returns); use in dev/test
+    # Both env values are bootstrap defaults — admins can override per-field
+    # in the DB (see app_settings.email_*) without redeploying.
+    EMAIL_PROVIDER: str = "smtp"
+    EMAIL_API_KEY: str = ""           # used by resend / postmark / sendgrid
+    EMAIL_FROM_NAME: str = ""         # display name in the From header
     SMTP_HOST: str = "mailserver"
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
@@ -54,7 +62,7 @@ class Settings(BaseSettings):
     STRIPE_CURRENCY: str = "thb"
 
     # Thai VAT (ภาษีมูลค่าเพิ่ม). Course prices are stored as the VAT-INCLUSIVE
-    # amount in `price_cents` — at payment time we back-compute subtotal+vat
+    # amount in `price_baht` — at payment time we back-compute subtotal+vat
     # using this rate and freeze them on the Payment row. If Thailand changes
     # the standard rate, historic invoices still print whatever was frozen.
     VAT_RATE_PERCENT: float = 7.0
@@ -95,9 +103,9 @@ class Settings(BaseSettings):
     # Endpoint format: https://api.slipok.com/api/line/apikey/{BRANCH_ID}
     SLIPOK_API_KEY: str = ""
     SLIPOK_BRANCH_ID: str = ""
-    # Amount tolerance in satang. SlipOK returns the slip's transferred amount
+    # Amount tolerance in baht. SlipOK returns the slip's transferred amount
     # and we require it >= price - tolerance. Banks sometimes round funny.
-    SLIPOK_AMOUNT_TOLERANCE_SATANG: int = 0
+    SLIPOK_AMOUNT_TOLERANCE_BAHT: int = 0
 
     # End-to-end test bypass. Set ONLY in dev/CI; it exposes a route to
     # force-verify a user's email without going through SMTP. Production

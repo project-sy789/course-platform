@@ -2,10 +2,10 @@
 
 Three responsibilities here, kept together because they're tightly coupled:
 
-1. **VAT decomposition** — course prices are stored VAT-inclusive in satang.
-   `split_vat_inclusive(1070)` returns (subtotal=1000, vat=70) at 7%. Stripe
-   gets the inclusive amount, so subtotal+vat must match exactly — we use
-   integer math throughout to avoid rounding drift.
+1. **VAT decomposition** — course prices are stored VAT-inclusive in whole
+   baht. `split_vat_inclusive(107)` returns (subtotal=100, vat=7) at 7%.
+   Subtotal+vat must always sum back to the original — we use integer math
+   throughout (round subtotal, residual = vat) to avoid drift.
 
 2. **Sequential invoice number allocation** — Thai Revenue Department wants
    invoices numbered without gaps and uniquely per issuer. We get this by
@@ -30,16 +30,16 @@ from .config import settings
 from .models import Payment
 
 
-def split_vat_inclusive(total_cents: int) -> tuple[int, int]:
-    """Return (subtotal_cents, vat_cents) where total = subtotal + vat.
+def split_vat_inclusive(total_baht: int) -> tuple[int, int]:
+    """Return (subtotal_baht, vat_baht) where total = subtotal + vat.
 
-    `total_cents` is treated as VAT-inclusive. Subtotal is rounded; VAT is
+    `total_baht` is treated as VAT-inclusive. Subtotal is rounded; VAT is
     computed as the residual so the two always sum back to the original."""
     rate = settings.VAT_RATE_PERCENT / 100.0
     if rate <= 0:
-        return total_cents, 0
-    subtotal = round(total_cents / (1 + rate))
-    vat = total_cents - subtotal
+        return total_baht, 0
+    subtotal = round(total_baht / (1 + rate))
+    vat = total_baht - subtotal
     return subtotal, vat
 
 
@@ -78,7 +78,7 @@ def render_invoice_pdf(payment: Payment, course_title: str) -> bytes:
     """Render a single-page tax invoice for a paid Payment.
 
     Caller must ensure payment.status == "paid" and that invoice_number /
-    subtotal_cents / vat_cents are populated."""
+    subtotal_baht / vat_baht are populated."""
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
 
@@ -143,17 +143,17 @@ def render_invoice_pdf(payment: Payment, course_title: str) -> bytes:
     item_y = table_y - 24
     c.setFont(font, 10)
     c.drawString(2.0 * 72 / 2.54, item_y, course_title)
-    subtotal = (payment.subtotal_cents or 0) / 100
-    vat = (payment.vat_cents or 0) / 100
-    total = (payment.amount_cents or 0) / 100
-    c.drawRightString(width - 2.0 * 72 / 2.54, item_y, f"{subtotal:,.2f}")
+    subtotal = payment.subtotal_baht or 0
+    vat = payment.vat_baht or 0
+    total = payment.amount_baht or 0
+    c.drawRightString(width - 2.0 * 72 / 2.54, item_y, f"{subtotal:,}")
 
     # --- Totals
     ty = item_y - 40
     rows = [
-        ("ราคาก่อน VAT / Subtotal", f"{subtotal:,.2f}"),
-        (f"ภาษีมูลค่าเพิ่ม {settings.VAT_RATE_PERCENT:g}% / VAT", f"{vat:,.2f}"),
-        ("รวมทั้งสิ้น / Grand total", f"{total:,.2f}"),
+        ("ราคาก่อน VAT / Subtotal", f"{subtotal:,}"),
+        (f"ภาษีมูลค่าเพิ่ม {settings.VAT_RATE_PERCENT:g}% / VAT", f"{vat:,}"),
+        ("รวมทั้งสิ้น / Grand total", f"{total:,}"),
     ]
     for i, (label, value) in enumerate(rows):
         bold = i == len(rows) - 1

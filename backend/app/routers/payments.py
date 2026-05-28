@@ -104,9 +104,9 @@ def list_my_payments(
         {
             "id": str(p.id),
             "course_id": str(p.course_id),
-            "amount_cents": p.amount_cents,
-            "subtotal_cents": p.subtotal_cents,
-            "vat_cents": p.vat_cents,
+            "amount_baht": p.amount_baht,
+            "subtotal_baht": p.subtotal_baht,
+            "vat_baht": p.vat_baht,
             "currency": p.currency,
             "status": p.status,
             "method": p.payment_method,

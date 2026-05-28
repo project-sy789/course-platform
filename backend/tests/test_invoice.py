@@ -11,7 +11,7 @@ pytestmark = pytest.mark.asyncio
 
 
 def test_split_vat_inclusive_at_7pct():
-    # 1070 satang inclusive at 7% → 1000 + 70.
+    # 1070 baht inclusive at 7% → 1000 + 70.
     sub, vat = split_vat_inclusive(1070)
     assert sub + vat == 1070
     assert sub == 1000
@@ -19,7 +19,7 @@ def test_split_vat_inclusive_at_7pct():
 
 
 def test_split_vat_inclusive_handles_rounding():
-    # 100 satang inclusive at 7% → ~93.46 + ~6.54 → 93 + 7 (residual).
+    # 100 baht inclusive at 7% → ~93.46 + ~6.54 → 93 + 7 (residual).
     sub, vat = split_vat_inclusive(100)
     assert sub + vat == 100
 
@@ -31,13 +31,13 @@ def test_split_vat_zero_amount():
 
 def test_allocate_invoice_number_is_sequential(db, make_user):
     user = make_user()
-    course = Course(slug="c1", title="C", price_cents=10000)
+    course = Course(slug="c1", title="C", price_baht=10000)
     db.add(course); db.commit()
 
     n1 = allocate_invoice_number(db)
     db.add(Payment(
         user_id=user.id, course_id=course.id, stripe_session_id="cs_1",
-        amount_cents=10000, currency="thb", status="paid", invoice_number=n1,
+        amount_baht=10000, currency="thb", status="paid", invoice_number=n1,
     )); db.commit()
 
     n2 = allocate_invoice_number(db)
@@ -51,13 +51,13 @@ def test_render_invoice_pdf_returns_pdf_bytes(db, make_user):
     user.tax_name = "บริษัท ทดสอบ จำกัด"
     user.tax_id = "1234567890123"
     user.tax_address = "123 ถ.สุขุมวิท แขวงคลองตัน เขตคลองเตย กรุงเทพฯ 10110"
-    course = Course(slug="c1", title="คอร์สทดสอบ", price_cents=10700)
+    course = Course(slug="c1", title="คอร์สทดสอบ", price_baht=10700)
     db.add(course); db.commit()
 
-    sub, vat = split_vat_inclusive(course.price_cents)
+    sub, vat = split_vat_inclusive(course.price_baht)
     p = Payment(
         user_id=user.id, course_id=course.id, stripe_session_id="cs_2",
-        amount_cents=course.price_cents, subtotal_cents=sub, vat_cents=vat,
+        amount_baht=course.price_baht, subtotal_baht=sub, vat_baht=vat,
         currency="thb", status="paid", invoice_number="INV-000001",
         buyer_tax_name=user.tax_name, buyer_tax_id=user.tax_id,
         buyer_tax_address=user.tax_address, buyer_tax_branch="สำนักงานใหญ่",
@@ -77,11 +77,11 @@ async def test_invoice_endpoint_requires_auth(client):
 async def test_invoice_endpoint_rejects_other_users(client, db, make_user, auth_cookie):
     owner = make_user("owner@example.com")
     other = make_user("other@example.com")
-    course = Course(slug="c1", title="C", price_cents=10000)
+    course = Course(slug="c1", title="C", price_baht=10000)
     db.add(course); db.commit()
     p = Payment(
         user_id=owner.id, course_id=course.id, stripe_session_id="cs_3",
-        amount_cents=10000, subtotal_cents=9346, vat_cents=654,
+        amount_baht=10000, subtotal_baht=9346, vat_baht=654,
         currency="thb", status="paid", invoice_number="INV-000002",
     )
     db.add(p); db.commit()
@@ -93,11 +93,11 @@ async def test_invoice_endpoint_rejects_other_users(client, db, make_user, auth_
 
 async def test_invoice_endpoint_returns_pdf(client, db, make_user, auth_cookie):
     user = make_user("alice@example.com")
-    course = Course(slug="c1", title="คอร์สทดสอบ", price_cents=10700)
+    course = Course(slug="c1", title="คอร์สทดสอบ", price_baht=10700)
     db.add(course); db.commit()
     p = Payment(
         user_id=user.id, course_id=course.id, stripe_session_id="cs_4",
-        amount_cents=10700, subtotal_cents=10000, vat_cents=700,
+        amount_baht=10700, subtotal_baht=10000, vat_baht=700,
         currency="thb", status="paid", invoice_number="INV-000003",
         buyer_tax_name="Alice", buyer_tax_id="1234567890123",
         buyer_tax_address="-", buyer_tax_branch="สำนักงานใหญ่",

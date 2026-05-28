@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    String, Text, Integer, Boolean, ForeignKey, BigInteger,
-    LargeBinary, DateTime, UniqueConstraint, Index, func, false,
+    String, Text, Integer, SmallInteger, Boolean, ForeignKey, BigInteger,
+    LargeBinary, DateTime, UniqueConstraint, Index, CheckConstraint, func, false,
 )
 from sqlalchemy.dialects.postgresql import UUID, INET, CITEXT
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -35,7 +35,7 @@ class Course(Base):
     slug: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    price_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    price_baht: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Time-limited access. NULL = lifetime (ขายขาด). Otherwise enrollments
     # created for this course expire at created_at + access_duration_days.
     access_duration_days: Mapped[int | None] = mapped_column(Integer)
@@ -45,6 +45,10 @@ class Course(Base):
     # more CPU and disables hardware video decode. Only worth it for
     # high-value courses; default off.
     pixel_watermark: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    cover_image_key: Mapped[str | None] = mapped_column(Text)
+    is_featured: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -70,10 +74,10 @@ class Lesson(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     is_preview: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # Optional per-lesson price (satang). 0 = bundled with course — must own the
+    # Optional per-lesson price (whole baht). 0 = bundled with course — must own the
     # whole course to unlock. >0 = sold individually as well (course enrollment
     # still unlocks it; this just opens a second purchase path).
-    price_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    price_baht: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     __table_args__ = (UniqueConstraint("course_id", "position", name="uq_lesson_position"),)
 
@@ -188,12 +192,12 @@ class Payment(Base):
         UUID(as_uuid=True), ForeignKey("slip_uploads.id", ondelete="SET NULL")
     )
     payment_method: Mapped[str] = mapped_column(Text, nullable=False, default="slip_manual")
-    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-    # VAT breakdown (Thai 7% VAT). amount_cents = subtotal_cents + vat_cents.
+    amount_baht: Mapped[int] = mapped_column(Integer, nullable=False)
+    # VAT breakdown (Thai 7% VAT). amount_baht = subtotal_baht + vat_baht.
     # Computed at payment-creation time from the configured VAT_RATE so historic
     # invoices stay correct even if the rate changes later.
-    subtotal_cents: Mapped[int | None] = mapped_column(Integer)
-    vat_cents: Mapped[int | None] = mapped_column(Integer)
+    subtotal_baht: Mapped[int | None] = mapped_column(Integer)
+    vat_baht: Mapped[int | None] = mapped_column(Integer)
     # Sequential tax-invoice number (เลขที่ใบกำกับภาษี). Allocated only on
     # successful payment; remains NULL for pending/failed.
     invoice_number: Mapped[str | None] = mapped_column(Text, unique=True)
@@ -239,14 +243,17 @@ class EncodeJob(Base):
 
 
 class LessonMaterial(Base):
-    """A downloadable supplementary file attached to a lesson (PDF slides,
-    worksheet, source code zip, etc.). The original file lives in R2 and is
-    served through the API so we can stamp each download with the requesting
-    user's identifier."""
+    """A downloadable supplementary file. Scoped to *either* one lesson
+    (`lesson_id` set) or the whole course (`course_id` set). The CHECK
+    constraint enforces exactly-one — same shape `slip_uploads` uses for
+    its course-or-lesson target."""
     __tablename__ = "lesson_materials"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    lesson_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
+    lesson_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="CASCADE"), nullable=True
+    )
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=True
     )
     filename: Mapped[str] = mapped_column(Text, nullable=False)
     content_type: Mapped[str] = mapped_column(Text, nullable=False)
@@ -254,7 +261,14 @@ class LessonMaterial(Base):
     r2_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (Index("idx_lesson_materials_lesson", "lesson_id"),)
+    __table_args__ = (
+        Index("idx_lesson_materials_lesson", "lesson_id"),
+        Index("idx_lesson_materials_course", "course_id"),
+        CheckConstraint(
+            "(course_id IS NULL) <> (lesson_id IS NULL)",
+            name="ck_lesson_materials_scope",
+        ),
+    )
 
 
 class MaterialDownloadLog(Base):
@@ -304,54 +318,6 @@ class LessonProgress(Base):
     )
 
     __table_args__ = (Index("idx_lesson_progress_user", "user_id"),)
-
-
-# ---------- Credit wallet (ระบบเหรียญ/โทเค็น) ----------
-# A user's wallet balance lives in `credit_wallets` for fast reads. Every
-# change is mirrored to an append-only `credit_ledger` so the balance can be
-# audited / reconstructed and an admin reversal is just another ledger row.
-# Both balance and ledger amounts are in satang to match course pricing.
-
-class CreditWallet(Base):
-    __tablename__ = "credit_wallets"
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
-    balance_satang: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-class CreditLedger(Base):
-    """Append-only history of every wallet movement.
-
-    `kind` values:
-      - "topup"   admin or future payment provider added credits
-      - "spend"   user redeemed credits to unlock a course/lesson
-      - "refund"  reversal of a previous spend
-      - "adjust"  manual correction by an admin (positive or negative)
-    """
-    __tablename__ = "credit_ledger"
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    delta_satang: Mapped[int] = mapped_column(Integer, nullable=False)
-    balance_after_satang: Mapped[int] = mapped_column(Integer, nullable=False)
-    kind: Mapped[str] = mapped_column(Text, nullable=False)
-    # Free-form pointer to the source: course_id, lesson_id, payment_id, or
-    # a human note for manual adjustments. Not a FK because multiple targets.
-    ref: Mapped[str | None] = mapped_column(Text)
-    note: Mapped[str | None] = mapped_column(Text)
-    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    __table_args__ = (
-        Index("idx_credit_ledger_user_time", "user_id", "created_at"),
-    )
 
 
 # ---------- Anti-account-sharing: trusted devices ----------
@@ -429,15 +395,21 @@ class SlipUpload(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    # Exactly one of course_id / lesson_id is set, mirroring the per-course
-    # vs per-lesson purchase split. CHECK constraint below enforces that.
+    # Multi-item path: slip is attached to an Order, which carries its own items.
+    # Legacy single-item columns below are kept nullable for historical rows.
+    order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orders.id", ondelete="SET NULL")
+    )
+    # Legacy: exactly one of course_id / lesson_id was set, mirroring the per-
+    # course vs per-lesson purchase split. New rows leave both NULL and use
+    # order_id instead.
     course_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("courses.id", ondelete="SET NULL")
     )
     lesson_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="SET NULL")
     )
-    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_baht: Mapped[int] = mapped_column(Integer, nullable=False)
     r2_image_key: Mapped[str] = mapped_column(Text, nullable=False)
     # pending | auto_approved | admin_approved | rejected
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
@@ -454,9 +426,270 @@ class SlipUpload(Base):
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     review_note: Mapped[str | None] = mapped_column(Text)
+    # Coupon applied at upload time, if any. Resolved into a CouponRedemption
+    # row only on approval — bouncing or rejecting a slip leaves no audit dust.
+    coupon_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coupons.id", ondelete="SET NULL")
+    )
+    # Pre-discount price. NULL on slips uploaded without a coupon (in which
+    # case original == amount_baht).
+    original_amount_baht: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         Index("idx_slip_uploads_user", "user_id"),
         Index("idx_slip_uploads_status", "status"),
     )
+
+
+class AppSettings(Base):
+    """Singleton row holding runtime-editable payment config.
+
+    Each column is nullable. NULL = "fall back to .env" so an unconfigured
+    deploy keeps using the env-var values; the admin UI overrides them
+    per-field. The CHECK on id = 1 enforces the singleton at the DB level.
+    """
+    __tablename__ = "app_settings"
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    receiver_bank_name: Mapped[str | None] = mapped_column(Text)
+    receiver_bank_account: Mapped[str | None] = mapped_column(Text)
+    receiver_name: Mapped[str | None] = mapped_column(Text)
+    promptpay_id: Mapped[str | None] = mapped_column(Text)
+    slipok_api_key: Mapped[str | None] = mapped_column(Text)
+    slipok_branch_id: Mapped[str | None] = mapped_column(Text)
+    # Email provider config — NULL on each = "fall back to .env". The provider
+    # column picks the transport (smtp|resend|postmark|sendgrid|disabled);
+    # email_api_key is the bearer/server token for HTTP-API providers and is
+    # ignored when provider=smtp. email_from / email_from_name override
+    # SMTP_FROM / EMAIL_FROM_NAME and apply to every provider.
+    email_provider: Mapped[str | None] = mapped_column(Text)
+    email_api_key: Mapped[str | None] = mapped_column(Text)
+    email_from: Mapped[str | None] = mapped_column(Text)
+    email_from_name: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+
+    __table_args__ = (CheckConstraint("id = 1", name="ck_app_settings_singleton"),)
+
+
+# ---------- Coupons ----------
+# Admin-managed discount codes. A code is validated at checkout time, the
+# discounted amount becomes the `expected` for the slip upload, and after
+# approval a CouponRedemption row is appended for audit + per-user limits.
+#
+# Three kinds:
+#   - "fixed"   subtract `amount_baht` from the price (clamped to 0)
+#   - "percent" subtract round(price * percent / 100), optionally capped
+#               by max_discount_baht
+#   - "full"    100% off — used for comped enrollments / refund coupons
+#
+# Scope:
+#   - "all"     applies to any course or lesson purchase
+#   - "course"  only when target_course_id matches the purchased course
+#   - "lesson"  only when target_lesson_id matches the purchased lesson
+
+
+class Coupon(Base):
+    __tablename__ = "coupons"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Stored uppercased for case-insensitive match. Unique at the DB level so
+    # accidental duplicate codes raise IntegrityError on insert.
+    code: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)  # fixed|percent|full
+
+    amount_baht: Mapped[int | None] = mapped_column(Integer)        # for kind=fixed
+    percent: Mapped[int | None] = mapped_column(SmallInteger)       # for kind=percent (1-100)
+    max_discount_baht: Mapped[int | None] = mapped_column(Integer)  # cap for percent
+    min_purchase_baht: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    scope: Mapped[str] = mapped_column(Text, nullable=False, default="all")  # all|course|lesson
+    target_course_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE")
+    )
+    target_lesson_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="CASCADE")
+    )
+
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    usage_limit: Mapped[int | None] = mapped_column(Integer)    # null = unlimited globally
+    per_user_limit: Mapped[int | None] = mapped_column(Integer) # null = unlimited per user
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    note: Mapped[str | None] = mapped_column(Text)              # admin-only label
+
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('fixed','percent','full')", name="ck_coupon_kind",
+        ),
+        CheckConstraint(
+            "scope IN ('all','course','lesson')", name="ck_coupon_scope",
+        ),
+        # Targets must align with scope.
+        CheckConstraint(
+            "(scope = 'course' AND target_course_id IS NOT NULL AND target_lesson_id IS NULL) "
+            "OR (scope = 'lesson' AND target_lesson_id IS NOT NULL AND target_course_id IS NULL) "
+            "OR (scope = 'all' AND target_course_id IS NULL AND target_lesson_id IS NULL)",
+            name="ck_coupon_target_scope",
+        ),
+        # Value field must align with kind.
+        CheckConstraint(
+            "(kind = 'fixed' AND amount_baht IS NOT NULL AND amount_baht > 0) "
+            "OR (kind = 'percent' AND percent IS NOT NULL AND percent BETWEEN 1 AND 100) "
+            "OR (kind = 'full')",
+            name="ck_coupon_value",
+        ),
+        Index("idx_coupons_active", "is_active", "valid_until"),
+    )
+
+
+class CouponRedemption(Base):
+    """Append-only log of every successful coupon use.
+
+    Powers both the per-user limit check and the admin redemptions view. The
+    payment_id is filled when materialise_approval creates the Payment, but
+    the redemption row is written earlier (at slip-upload time) — so it can
+    briefly point only to a slip. SET NULL on delete keeps history readable
+    even if payments/slips are purged for GDPR."""
+    __tablename__ = "coupon_redemptions"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    coupon_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coupons.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL")
+    )
+    slip_upload_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("slip_uploads.id", ondelete="SET NULL")
+    )
+    order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orders.id", ondelete="SET NULL")
+    )
+    original_baht: Mapped[int] = mapped_column(Integer, nullable=False)
+    discount_baht: Mapped[int] = mapped_column(Integer, nullable=False)
+    final_baht: Mapped[int] = mapped_column(Integer, nullable=False)
+    redeemed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_coupon_redemptions_coupon", "coupon_id"),
+        Index("idx_coupon_redemptions_user", "user_id"),
+    )
+
+
+# ---------- Orders (multi-item checkout) ----------
+# A buyer's cart materialises into an Order at the moment they submit their
+# slip. The Order freezes the prices (`unit_price_baht` per item) so even if
+# a course price changes later, the historical record stays correct.
+#
+# An Order may carry zero, one, or many courses *and* lessons. The slip's
+# expected amount is the order's `final_baht` (subtotal − coupon discount).
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # pending  — slip not yet uploaded
+    # awaiting — slip uploaded, awaiting verification (auto or admin)
+    # paid     — slip approved, items granted
+    # cancelled
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    subtotal_baht: Mapped[int] = mapped_column(Integer, nullable=False)
+    discount_baht: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    final_baht: Mapped[int] = mapped_column(Integer, nullable=False)
+    coupon_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coupons.id", ondelete="SET NULL")
+    )
+    coupon_code: Mapped[str | None] = mapped_column(Text)  # frozen snapshot
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    items: Mapped[list["OrderItem"]] = relationship(
+        "OrderItem", back_populates="order", cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','awaiting','paid','cancelled')",
+            name="ck_order_status",
+        ),
+        Index("idx_orders_user_status", "user_id", "status"),
+    )
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False
+    )
+    # Exactly one of course_id / lesson_id is set per item.
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="SET NULL")
+    )
+    lesson_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="SET NULL")
+    )
+    title_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    unit_price_baht: Mapped[int] = mapped_column(Integer, nullable=False)
+    line_discount_baht: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    line_final_baht: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    order: Mapped["Order"] = relationship("Order", back_populates="items")
+
+    __table_args__ = (
+        CheckConstraint(
+            "(course_id IS NULL) <> (lesson_id IS NULL)",
+            name="ck_order_item_target",
+        ),
+        Index("idx_order_items_order", "order_id"),
+    )
+
+
+# ---------- Admin audit log ----------
+# Append-only ledger of every state-changing admin action. The dashboard /
+# audit page renders this back as a forensic timeline. We log AFTER the DB
+# commit succeeds so a rolled-back action leaves no trace.
+
+
+class AdminAuditLog(Base):
+    __tablename__ = "admin_audit_log"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    actor_email: Mapped[str | None] = mapped_column(Text)  # snapshot — survives user deletion
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    # Subject of the action — eg the user being suspended, the course being
+    # edited. Free-form so the same table covers every admin touchpoint.
+    target_type: Mapped[str | None] = mapped_column(Text)  # "user" | "course" | "coupon" | …
+    target_id: Mapped[str | None] = mapped_column(Text)    # uuid OR slug, stored as text
+    summary: Mapped[str] = mapped_column(Text, nullable=False)  # human-readable one-liner
+    detail: Mapped[str | None] = mapped_column(Text)            # JSON blob for diffs/before-after
+    ip: Mapped[str | None] = mapped_column(INET)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_admin_audit_actor", "actor_id", "created_at"),
+        Index("idx_admin_audit_target", "target_type", "target_id"),
+        Index("idx_admin_audit_created", "created_at"),
+    )
+

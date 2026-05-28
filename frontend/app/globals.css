@@ -45,3 +45,12 @@ body {
   padding-top: 0.45rem;
   color: #7a1c1c;
 }
+
+/* One-shot "wink" used by the logo period easter egg. Snap up, tilt, settle.
+   Re-triggered by remounting the span via React `key`. */
+@keyframes wink {
+  0%   { transform: scale(1)   rotate(0deg); }
+  30%  { transform: scale(2.2) rotate(-14deg); }
+  60%  { transform: scale(1.1) rotate(8deg); }
+  100% { transform: scale(1)   rotate(0deg); }
+}

@@ -1,14 +1,19 @@
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from ..db import get_session
 from ..deps import current_user
 from ..models import User, Course, Lesson, Enrollment
+from ..r2 import get_bytes
 
 router = APIRouter(prefix="/api/v1", tags=["lessons"])
+
+
+def _cover_url(c: Course) -> str | None:
+    return f"/api/v1/courses/{c.slug}/cover" if c.cover_image_key else None
 
 
 @router.get("/courses")
@@ -16,8 +21,10 @@ def list_courses(db: Session = Depends(get_session)):
     rows = db.scalars(select(Course).order_by(Course.created_at.desc())).all()
     return [
         {"id": str(c.id), "slug": c.slug, "title": c.title,
-         "description": c.description, "price_cents": c.price_cents,
-         "access_duration_days": c.access_duration_days}
+         "description": c.description, "price_baht": c.price_baht,
+         "access_duration_days": c.access_duration_days,
+         "is_featured": c.is_featured,
+         "cover_url": _cover_url(c)}
         for c in rows
     ]
 
@@ -35,15 +42,34 @@ def get_course(slug: str, db: Session = Depends(get_session)):
         "slug": course.slug,
         "title": course.title,
         "description": course.description,
-        "price_cents": course.price_cents,
+        "price_baht": course.price_baht,
         "access_duration_days": course.access_duration_days,
         "pixel_watermark": course.pixel_watermark,
+        "is_featured": course.is_featured,
+        "cover_url": _cover_url(course),
         "lessons": [
             {"id": str(l.id), "title": l.title, "position": l.position,
-             "is_preview": l.is_preview, "price_cents": l.price_cents}
+             "is_preview": l.is_preview, "price_baht": l.price_baht}
             for l in lessons
         ],
     }
+
+
+@router.get("/courses/{slug}/cover")
+def get_course_cover(slug: str, db: Session = Depends(get_session)):
+    course = db.scalar(select(Course).where(Course.slug == slug))
+    if not course or not course.cover_image_key:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no cover")
+    key = course.cover_image_key
+    ext = key.rsplit(".", 1)[-1].lower()
+    ctype = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+             "png": "image/png", "webp": "image/webp"}.get(ext, "application/octet-stream")
+    data = get_bytes(key)
+    return Response(
+        content=data,
+        media_type=ctype,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.get("/lessons/{lesson_id}")

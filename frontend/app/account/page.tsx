@@ -18,9 +18,9 @@ type TaxInfo = {
 };
 type PaymentRow = {
   id: string;
-  amount_cents: number;
-  subtotal_cents: number | null;
-  vat_cents: number | null;
+  amount_baht: number;
+  subtotal_baht: number | null;
+  vat_baht: number | null;
   currency: string;
   status: string;
   invoice_number: string | null;
@@ -163,7 +163,7 @@ export default function AccountPage() {
                 <div className="grow">
                   <p className="font-display text-[16px]">
                     {formatThaiDate(p.created_at)} —{" "}
-                    <span className="font-mono">{formatTHB(p.amount_cents)}</span>
+                    <span className="font-mono">{formatTHB(p.amount_baht)}</span>
                   </p>
                   <p className="text-[12px] text-muted mt-1 font-mono">
                     {p.status}

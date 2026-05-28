@@ -1,5 +1,10 @@
 # Blue-Green Deploy on Hetzner
 
+> **Beta first?** If you just want a closed beta on the cheap, follow
+> [BETA.md](BETA.md) instead — Cloudflare Pages frontend + a single-VPS
+> backend, no Caddy in front of the app, no blue/green. Come back here
+> when you're ready for zero-downtime deploys + monitoring.
+
 Two copies of the stateless tier (`api` + `worker`) run side-by-side as
 **blue** and **green**. Caddy reverse-proxies traffic to whichever color is
 currently "live"; deploys flip the proxy from one to the other with no
