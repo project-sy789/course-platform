@@ -22,11 +22,11 @@ from sqlalchemy import select, desc
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .coupons import CouponError, _normalise, validate as validate_coupon
-from .db import get_session
-from .deps import current_user, current_admin
-from .logging import log
-from .models import Coupon, CouponRedemption, Course, Lesson, User
+from ..coupons import CouponError, _normalise, validate as validate_coupon
+from ..db import get_session
+from ..deps import current_user, current_admin
+from ..logging import log
+from ..models import Coupon, CouponRedemption, Course, Lesson, User
 
 
 router = APIRouter(prefix="/api/v1", tags=["coupons"])
