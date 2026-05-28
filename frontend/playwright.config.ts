@@ -14,7 +14,10 @@ import { defineConfig, devices } from "@playwright/test";
  *    intercepts /api/v1/* and serves the seed data — no Docker stack
  *    needed. critical-flow.spec.ts is written for this mode.
  */
-const useMock = process.env.E2E_USE_MOCK === "1" || process.env.CI === "true";
+// GitHub Actions sets CI=true; e2e.yml used to override it to "1" which
+// silently broke this check and left baseURL with no server. Accept any
+// truthy CI value to make the mode flip robust either way.
+const useMock = process.env.E2E_USE_MOCK === "1" || !!process.env.CI;
 
 export default defineConfig({
   testDir: "./e2e",
