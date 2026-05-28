@@ -1,4 +1,7 @@
-"use client";
+"use client"
+// Edge runtime required by @cloudflare/next-on-pages for dynamic routes.
+export const runtime = "edge";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
